@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SBX CIS Smart Invoicing & Deduction Checker</title>
+
+  <!-- React + ReactDOM (UMD) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #printable, #printable * { visibility: visible; }
+      #printable { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <div id="root" class="max-w-6xl mx-auto p-4 md:p-8"></div>
+
+  <script type="text/babel">
+    const currency = (n) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 2 }).format(isFinite(n) ? n : 0);
+    const clampMoney = (v) => {
+      const n = parseFloat(String(v || "").replace(/,/g, ""));
+      return isFinite(n) ? Math.max(0, n) : 0;
+    };
+    const VAT_RATE = 0.2;
+
+    const Badge = ({children}) => (
+      <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">{children}</span>
+    );
+
+    function App(){
+      const [step, setStep] = React.useState(1);
+
+      // Step 1
+      const [youVat, setYouVat] = React.useState(true);
+      const [customerVat, setCustomerVat] = React.useState(true);
+      const [endUser, setEndUser] = React.useState(false);
+      const [withinCIS, setWithinCIS] = React.useState(true);
+
+      // Step 2
+      const [jobType, setJobType] = React.useState("general");
+      const [labour, setLabour] = React.useState("");
+      const [materials, setMaterials] = React.useState("");
+      const [other, setOther] = React.useState("");
+      const [cisStatus, setCisStatus] = React.useState("net20");
+
+      const labourVal = React.useMemo(()=>clampMoney(labour), [labour]);
+      const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
+      const otherVal = React.useMemo(()=>clampMoney(other), [other]);
+      const cisRate = React.useMemo(()=> cisStatus==="gross" ? 0 : (cisStatus==="net30" ? 0.30 : 0.20), [cisStatus]);
+
+      const cisDeduction = labourVal * cisRate;
+      const drcApplies = withinCIS && youVat && customerVat && !endUser;
+
+      const subtotal = labourVal + materialsVal + otherVal;
+      const vatAmount = drcApplies ? 0 : subtotal * VAT_RATE;
+      const totalToInvoice = subtotal + vatAmount;
+      const expectedTakeHome = totalToInvoice - cisDeduction;
+      const drcCustomerVatInfo = drcApplies ? subtotal * VAT_RATE : 0;
+
+      const reset = () => { 
+        setStep(1); 
+        setYouVat(true); setCustomerVat(true); setEndUser(false); setWithinCIS(true); 
+        setJobType("general"); setLabour(""); setMaterials(""); setOther(""); setCisStatus("net20"); 
+      };
+
+      return (
+        <div className="space-y-6">
+          <div className="flex items-start md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M3 21h18M7 21V9l5-3 5 3v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <h1 className="text-2xl md:text-3xl font-semibold">SBX CIS Smart Invoicing & Deduction Checker</h1>
+            </div>
+            <Badge>For CIS subcontractors</Badge>
+          </div>
+
+          <div className="rounded-2xl bg-white border border-blue-100 p-4">
+            <p className="text-gray-800">
+              <span className="font-semibold">Subcontractors:</span> use this tool to calculate correct invoice figures in minutes. 
+              We’ll separate labour from materials, calculate the <span className="font-medium">CIS deduction</span>, 
+              and check if the <span className="font-medium">Domestic Reverse Charge</span> applies.
+            </p>
+          </div>
+
+          {/* Step 1 */}
+          {step===1 && (
+            <div className="bg-white rounded-2xl shadow p-5 grid gap-6 md:grid-cols-2">
+              <div>
+                <label className="font-medium">Are YOU VAT-registered?</label>
+                <div className="flex gap-4 mt-1">
+                  <label><input type="radio" name="youVat" checked={youVat} onChange={()=>setYouVat(true)} /> Yes</label>
+                  <label><input type="radio" name="youVat" checked={!youVat} onChange={()=>setYouVat(false)} /> No</label>
+                </div>
+              </div>
+              <div>
+                <label className="font-medium">Is your CUSTOMER VAT-registered?</label>
+                <div className="flex gap-4 mt-1">
+                  <label><input type="radio" name="custVat" checked={customerVat} onChange={()=>setCustomerVat(true)} /> Yes</label>
+                  <label><input type="radio" name="custVat" checked={!customerVat} onChange={()=>setCustomerVat(false)} /> No</label>
+                </div>
+              </div>
+              <div>
+                <label className="font-medium">Is this work within CIS?</label>
+                <div className="flex gap-4 mt-1">
+                  <label><input type="radio" name="cis" checked={withinCIS} onChange={()=>setWithinCIS(true)} /> Yes</label>
+                  <label><input type="radio" name="cis" checked={!withinCIS} onChange={()=>setWithinCIS(false)} /> No / Not sure</label>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">If you’re a subcontractor supplying construction services (labour) to a contractor, it’s usually CIS.</p>
+              </div>
+              <div>
+                <label className="font-medium">Is your CUSTOMER the End User?</label>
+                <div className="flex gap-4 mt-1">
+                  <label><input type="radio" name="endUser" checked={endUser} onChange={()=>setEndUser(true)} /> Yes</label>
+                  <label><input type="radio" name="endUser" checked={!endUser} onChange={()=>setEndUser(false)} /> No</label>
+                </div>
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>setStep(2)}>Continue</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2 */}
+          {step===2 && (
+            <div className="bg-white rounded-2xl shadow p-5">
+              <div className="grid gap-6 md:grid-cols-3">
+                <div>
+                  <label className="font-medium">Type of job</label>
+                  <select value={jobType} onChange={(e)=>setJobType(e.target.value)} className="border rounded-lg p-2 w-full mt-1">
+                    <option value="general">General building</option>
+                    <option value="electrical">Electrical</option>
+                    <option value="plumbing">Plumbing</option>
+                    <option value="decorating">Decorating</option>
+                    <option value="roofing">Roofing</option>
+                    <option value="carpentry">Carpentry</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-medium">Labour (ex VAT)</label>
+                  <input className="border rounded-lg p-2 w-full mt-1" placeholder="e.g. 1,250" value={labour} onChange={(e)=>setLabour(e.target.value)} />
+                  <p className="text-xs text-gray-500">CIS applies to labour only.</p>
+                </div>
+                <div>
+                  <label className="font-medium">Materials (ex VAT)</label>
+                  <input className="border rounded-lg p-2 w-full mt-1" placeholder="e.g. 640" value={materials} onChange={(e)=>setMaterials(e.target.value)} />
+                  <p className="text-xs text-gray-500">Excluded from CIS deduction.</p>
+                </div>
+                <div>
+                  <label className="font-medium">Other charges</label>
+                  <input className="border rounded-lg p-2 w-full mt-1" placeholder="e.g. 85" value={other} onChange={(e)=>setOther(e.target.value)} />
+                </div>
+                <div>
+                  <label className="font-medium">Your CIS status</label>
+                  <select value={cisStatus} onChange={(e)=>setCisStatus(e.target.value)} className="border rounded-lg p-2 w-full mt-1">
+                    <option value="gross">Gross (0% deduction)</option>
+                    <option value="net20">Registered (20% deduction)</option>
+                    <option value="net30">Unverified (30% deduction)</option>
+                  </select>
+                  <p className="text-xs text-gray-500">Ask the contractor to verify you if unsure.</p>
+                </div>
+              </div>
+              <div className="flex justify-between mt-6">
+                <button className="px-4 py-2 rounded-lg bg-gray-200" onClick={()=>setStep(1)}>Back</button>
+                <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>setStep(3)} disabled={subtotal<=0}>See results</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3 */}
+          {step===3 && (
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="bg-white rounded-2xl shadow p-5 space-y-4">
+                <h2 className="text-lg font-semibold">Results — what to put on your invoice</h2>
+                <div className="rounded-xl border p-4">
+                  <div className="flex justify-between text-sm"><span>Labour</span><span>{currency(labourVal)}</span></div>
+                  <div className="flex justify-between text-sm"><span>Materials</span><span>{currency(materialsVal)}</span></div>
+                  <div className="flex justify-between text-sm"><span>Other</span><span>{currency(otherVal)}</span></div>
+                  <div className="my-2 border-t" />
+                  <div className="flex justify-between font-medium"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
+                  {!drcApplies && <div className="flex justify-between text-sm"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>}
+                  <div className="flex justify-between font-semibold text-lg mt-2"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
+                  <div className="my-2 border-t" />
+                  <div className="flex justify-between text-sm"><span>CIS deduction ({cisRate>0?`${Math.round(cisRate*100)}%`:"none"})</span><span className="text-red-600">- {currency(cisDeduction)}</span></div>
+                  <div className="flex justify-between font-semibold mt-1"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                </div>
+
+                {drcApplies ? (
+                  <div className="rounded-xl bg-amber-50 border p-4 text-sm">
+                    <p><span className="font-semibold">Domestic Reverse Charge applies.</span> Do <b>not</b> charge VAT. Add wording:</p>
+                    <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
+                    <p className="text-xs text-gray-500 mt-2">Customer will account for about {currency(drcCustomerVatInfo)} VAT.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-emerald-50 border p-4 text-sm">
+                    <p><span className="font-semibold">Charge VAT as normal.</span> Reverse charge does not apply.</p>
+                  </div>
+                )}
+
+                <div className="rounded-xl bg-gray-100 p-4 text-xs leading-relaxed">
+                  <p className="font-medium">Invoice checklist:</p>
+                  <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Show Labour and Materials on separate lines</li>
+                    <li>{drcApplies ? "Do NOT add VAT; include the DRC wording." : "Add VAT @ 20% as usual (unless zero-rated)"} </li>
+                    <li>Include CIS deduction line for contractor’s reference</li>
+                    <li>Make “Total to invoice” and “Expected to receive” clear</li>
+                  </ul>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>window.print()}>Download / Print</button>
+                  <button className="px-4 py-2 rounded-lg bg-gray-200" onClick={()=>setStep(2)}>Edit amounts</button>
+                  <button className="px-4 py-2 rounded-lg bg-gray-100" onClick={reset}>Start over</button>
+                </div>
+              </div>
+
+              {/* Invoice preview */}
+              <div id="printable" className="bg-white rounded-2xl shadow p-5">
+                <h2 className="text-lg font-semibold mb-3">Clean invoice preview</h2>
+                <div className="rounded-2xl border p-6 bg-white">
+                  <div className="flex justify-between mb-4">
+                    <div><h3 className="text-lg font-semibold">INVOICE</h3><p className="text-xs text-gray-500">{jobType} works</p></div>
+                    <div className="text-right text-xs text-gray-500"><p>Date: __________</p><p>Invoice #: __________</p></div>
+                  </div>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {labourVal>0 && <tr><td>Labour</td><td className="text-right">{currency(labourVal)}</td></tr>}
+                      {materialsVal>0 && <tr><td>Materials</td><td className="text-right">{currency(materialsVal)}</td></tr>}
+                      {otherVal>0 && <tr><td>Other</td><td className="text-right">{currency(otherVal)}</td></tr>}
+                      <tr><td className="font-medium">Subtotal</td><td className="text-right font-medium">{currency(subtotal)}</td></tr>
+                      {!drcApplies && <tr><td>VAT @20%</td><td className="text-right">{currency(vatAmount)}</td></tr>}
+                      <tr><td className="font-semibold">Total to invoice</td><td className="text-right font-semibold">{currency(totalToInvoice)}</td></tr>
+                    </tbody>
+                  </table>
+                  <div className="mt-3 text-xs">{drcApplies ? "Domestic Reverse Charge applies." : "VAT charged at 20%."}</div>
+                  <div className="mt-3 border-t pt-2 text-xs">
+                    <div className="flex justify-between"><span>CIS deduction</span><span>- {currency(cisDeduction)}</span></div>
+                    <div className="flex justify-between font-semibold"><span>Expected you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                  </div>
+                  <div className="mt-4 text-xs text-gray-500">
+                    <p>Bank: __________</p>
+                    <p>Account: __________  Sort: ______</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
