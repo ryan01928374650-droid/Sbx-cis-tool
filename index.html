@@ -154,6 +154,59 @@
         "Waste Removal / Skip","Other…"
       ];
 
+      /* NEW: Email invoice helper */
+      const emailInvoice = () => {
+        const lines = [];
+        const job = (showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType))
+          ? `${(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works`
+          : "";
+
+        lines.push(`INVOICE ${invNo || ""}`);
+        if (job) lines.push(job);
+        lines.push(`Date: ${invDate || ""}`);
+        lines.push("");
+        lines.push("Billed to:");
+        lines.push(`${billTo}`);
+        if (siteAddr1) lines.push(siteAddr1);
+        if (siteAddr2) lines.push(siteAddr2);
+        if (siteCity || sitePost) lines.push(`${siteCity} ${sitePost}`.trim());
+        lines.push("");
+        lines.push("From:");
+        lines.push(`${fromName}`);
+        if (fromAddr1) lines.push(fromAddr1);
+        if (fromAddr2) lines.push(fromAddr2);
+        if (fromCity || fromPost) lines.push(`${fromCity} ${fromPost}`.trim());
+        if (youVat && (fromVat || "GB…")) lines.push(`VAT Reg: ${fromVat || "GB…"}`);
+        lines.push(`CIS Status: ${cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}`);
+        lines.push("");
+
+        if (labourVal>0) lines.push(`Labour (ex VAT)\t${currency(labourVal)}`);
+        if (materialsVal>0) lines.push(`Materials & consumables (ex VAT)\t${currency(materialsVal)}`);
+        if (otherVal>0) lines.push(`Other (ex VAT)\t${currency(otherVal)}`);
+        lines.push(`Subtotal\t${currency(subtotal)}`);
+        if (!drcApplies) lines.push(`VAT @ 20%\t${currency(vatAmount)}`);
+        lines.push(`Total to invoice\t${currency(totalToInvoice)}`);
+        if (cisRate>0) lines.push(`CIS deduction (${Math.round(cisRate*100)}%)\t- ${currency(cisDeduction)}`);
+        lines.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
+
+        lines.push("");
+        lines.push(drcApplies
+          ? "Note: Domestic Reverse Charge applies. Customer to account for VAT to HMRC."
+          : "Note: VAT charged at the prevailing rate."
+        );
+
+        lines.push("");
+        lines.push("Payment details:");
+        lines.push(`Bank: ${bankName || ""}`);
+        lines.push(`Account: ${bankAcc || ""}   Sort Code: ${bankSort || ""}`);
+        if (payRef) lines.push(`Payment reference: ${payRef}`);
+
+        const subject = `Invoice ${invNo || ""} from ${fromName || "Subcontractor"}`.trim();
+        const body = lines.join("\n");
+        const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        window.location.href = mailto;
+      };
+
       return (
         <div className="space-y-6">
           {/* Header */}
@@ -294,10 +347,10 @@
             </div>
           )}
 
-          {/* Step 3 — Spacious layout: 1 col (mobile) / 2 cols (lg) / 3 cols (xl) */}
+          {/* Step 3 — Results as a full row, then a 2-column grid below */}
           {step===3 && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
-              {/* COL 1: Results summary (not printed) */}
+            <div className="space-y-8">
+              {/* ROW 1: Results summary (full width, not printed) */}
               <div className="bg-white rounded-2xl shadow p-6 space-y-4">
                 <h2 className="text-lg font-semibold">Results — what to put on your invoice</h2>
                 <div className="rounded-xl border p-4">
@@ -338,156 +391,171 @@
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>window.print()}>Download / Print</button>
                   <button className="px-4 py-2 rounded-lg bg-gray-200" onClick={()=>setStep(2)}>Edit amounts</button>
                   <button className="px-4 py-2 rounded-lg bg-gray-100" onClick={reset}>Start over</button>
                   <button className="px-4 py-2 rounded-lg bg-gray-100" onClick={copyLines}>Copy invoice lines</button>
                 </div>
-
-                <div className="text-xs text-gray-500">Step 3 of 3</div>
               </div>
 
-              {/* COL 2: Inputs/editor (not printed) */}
-              <div className="bg-white rounded-2xl shadow p-6">
-                <h2 className="text-lg font-semibold mb-3">Invoice details (live)</h2>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">From (your business)</p>
-                    <input className="border rounded p-2 w-full" value={fromName} onChange={e=>setFromName(e.target.value)} placeholder="Your Trading Name" />
-                    <input className="border rounded p-2 w-full" value={fromAddr1} onChange={e=>setFromAddr1(e.target.value)} placeholder="Address line 1" />
-                    <input className="border rounded p-2 w-full" value={fromAddr2} onChange={e=>setFromAddr2(e.target.value)} placeholder="Address line 2" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input className="border rounded p-2 w-full" value={fromCity} onChange={e=>setFromCity(e.target.value)} placeholder="Town/City" />
-                      <input className="border rounded p-2 w-full" value={fromPost} onChange={e=>setFromPost(e.target.value)} placeholder="Postcode" />
+              {/* ROW 2: Two columns below – inputs (left) & invoice (right) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* LEFT: Inputs/editor (not printed) */}
+                <div className="bg-white rounded-2xl shadow p-6">
+                  <h2 className="text-lg font-semibold mb-3">Invoice details (live)</h2>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">From (your business)</p>
+                      <input className="border rounded p-2 w-full" value={fromName} onChange={e=>setFromName(e.target.value)} placeholder="Your Trading Name" />
+                      <input className="border rounded p-2 w-full" value={fromAddr1} onChange={e=>setFromAddr1(e.target.value)} placeholder="Address line 1" />
+                      <input className="border rounded p-2 w-full" value={fromAddr2} onChange={e=>setFromAddr2(e.target.value)} placeholder="Address line 2" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className="border rounded p-2 w-full" value={fromCity} onChange={e=>setFromCity(e.target.value)} placeholder="Town/City" />
+                        <input className="border rounded p-2 w-full" value={fromPost} onChange={e=>setFromPost(e.target.value)} placeholder="Postcode" />
+                      </div>
+                      <input className="border rounded p-2 w-full" value={fromVat} onChange={e=>setFromVat(e.target.value)} placeholder="VAT Reg (if any)" />
                     </div>
-                    <input className="border rounded p-2 w-full" value={fromVat} onChange={e=>setFromVat(e.target.value)} placeholder="VAT Reg (if any)" />
-                  </div>
 
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Bill to (customer)</p>
-                    <input className="border rounded p-2 w-full" value={billTo} onChange={e=>setBillTo(e.target.value)} placeholder="Customer name" />
-                    <input className="border rounded p-2 w-full" value={siteAddr1} onChange={e=>setSiteAddr1(e.target.value)} placeholder="Site address line 1" />
-                    <input className="border rounded p-2 w-full" value={siteAddr2} onChange={e=>setSiteAddr2(e.target.value)} placeholder="Site address line 2" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input className="border rounded p-2 w-full" value={siteCity} onChange={e=>setSiteCity(e.target.value)} placeholder="Town/City" />
-                      <input className="border rounded p-2 w-full" value={sitePost} onChange={e=>setSitePost(e.target.value)} placeholder="Postcode" />
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Bill to (customer)</p>
+                      <input className="border rounded p-2 w-full" value={billTo} onChange={e=>setBillTo(e.target.value)} placeholder="Customer name" />
+                      <input className="border rounded p-2 w-full" value={siteAddr1} onChange={e=>setSiteAddr1(e.target.value)} placeholder="Site address line 1" />
+                      <input className="border rounded p-2 w-full" value={siteAddr2} onChange={e=>setSiteAddr2(e.target.value)} placeholder="Site address line 2" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className="border rounded p-2 w-full" value={siteCity} onChange={e=>setSiteCity(e.target.value)} placeholder="Town/City" />
+                        <input className="border rounded p-2 w-full" value={sitePost} onChange={e=>setSitePost(e.target.value)} placeholder="Postcode" />
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Invoice meta</p>
-                    <input className="border rounded p-2 w-full" value={invNo} onChange={e=>setInvNo(e.target.value)} placeholder="Invoice number" />
-                    <input type="date" className="border rounded p-2 w-full" value={invDate} onChange={e=>setInvDate(e.target.value)} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Payment details</p>
-                    <input className="border rounded p-2 w-full" value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input className="border rounded p-2 w-full" value={bankAcc} onChange={e=>setBankAcc(e.target.value)} placeholder="Account" />
-                      <input className="border rounded p-2 w-full" value={bankSort} onChange={e=>setBankSort(e.target.value)} placeholder="Sort code" />
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Invoice meta</p>
+                      <input className="border rounded p-2 w-full" value={invNo} onChange={e=>setInvNo(e.target.value)} placeholder="Invoice number" />
+                      <input type="date" className="border rounded p-2 w-full" value={invDate} onChange={e=>setInvDate(e.target.value)} />
                     </div>
-                    <input className="border rounded p-2 w-full" value={payRef} onChange={e=>setPayRef(e.target.value)} placeholder="Payment reference" />
+
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Payment details</p>
+                      <input className="border rounded p-2 w-full" value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className="border rounded p-2 w-full" value={bankAcc} onChange={e=>setBankAcc(e.target.value)} placeholder="Account" />
+                        <input className="border rounded p-2 w-full" value={bankSort} onChange={e=>setBankSort(e.target.value)} placeholder="Sort code" />
+                      </div>
+                      <input className="border rounded p-2 w-full" value={payRef} onChange={e=>setPayRef(e.target.value)} placeholder="Payment reference" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* COL 3: Printable invoice (sticky on desktop) */}
-              <div className="bg-white rounded-2xl shadow p-6 xl:sticky xl:top-6 h-fit" id="printable">
-                <h2 className="text-lg font-semibold mb-3">Invoice</h2>
+                {/* RIGHT: Printable invoice */}
+                <div>
+                  <div className="bg-white rounded-2xl shadow p-6" id="printable">
+                    <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
-                <div className="rounded-2xl border p-6 bg-white">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold">INVOICE</h3>
-                      {(showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType)) ? (
-                        <p className="text-xs text-gray-500">{(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works</p>
-                      ) : null}
-                    </div>
-                    <div className="text-right text-xs text-gray-500">
-                      <p>Date: {invDate || "__________"}</p>
-                      <p>Invoice #: {invNo || "__________"}</p>
+                    <div className="rounded-2xl border p-6 bg-white">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold">INVOICE</h3>
+                          {(showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType)) ? (
+                            <p className="text-xs text-gray-500">{(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works</p>
+                          ) : null}
+                        </div>
+                        <div className="text-right text-xs text-gray-500">
+                          <p>Date: {invDate || "__________"}</p>
+                          <p>Invoice #: {invNo || "__________"}</p>
+                        </div>
+                      </div>
+
+                      <div className="mb-4 grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <p className="font-semibold">Billed to</p>
+                          <p>{billTo}</p>
+                          <p>{siteAddr1}</p>
+                          <p>{siteAddr2}</p>
+                          <p>{siteCity} {sitePost}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">From</p>
+                          <p>{fromName}</p>
+                          <p>{fromAddr1}</p>
+                          <p>{fromAddr2}</p>
+                          <p>{fromCity} {fromPost}</p>
+                          {/* Show VAT Reg ONLY if VAT-registered */}
+                          {youVat && (
+                            <p>VAT Reg: {fromVat || "GB…"}</p>
+                          )}
+                          <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
+                        </div>
+                      </div>
+
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2">Description</th>
+                            <th className="text-right py-2">Amount (ex VAT)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {labourVal>0 && (
+                            <tr className="border-b">
+                              <td className="py-2">Labour</td>
+                              <td className="text-right py-2">{currency(labourVal)}</td>
+                            </tr>
+                          )}
+                          {materialsVal>0 && (
+                            <tr className="border-b">
+                              <td className="py-2">Materials & consumables</td>
+                              <td className="text-right py-2">{currency(materialsVal)}</td>
+                            </tr>
+                          )}
+                          {otherVal>0 && (
+                            <tr className="border-b">
+                              <td className="py-2">Other charges</td>
+                              <td className="text-right py-2">{currency(otherVal)}</td>
+                            </tr>
+                          )}
+                          <tr className="border-b">
+                            <td className="py-2 font-medium">Subtotal</td>
+                            <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
+                          </tr>
+                          {!drcApplies && (
+                            <tr className="border-b">
+                              <td className="py-2">VAT @ 20%</td>
+                              <td className="text-right py-2">{currency(vatAmount)}</td>
+                            </tr>
+                          )}
+                          <tr>
+                            <td className="py-2 font-semibold">Total to invoice</td>
+                            <td className="text-right py-2 font-semibold">{currency(totalToInvoice)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+
+                      <div className="mt-4 text-xs">
+                        {drcApplies ? (
+                          <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
+                        ) : (
+                          <p className="italic">VAT charged at the prevailing rate.</p>
+                        )}
+                      </div>
+
+                      <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
+                        <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
+                        <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                      </div>
+
+                      <div className="mt-4 text-xs text-gray-600">
+                        <p>Bank: {bankName || "__________"}</p>
+                        <p>Account: {bankAcc || "__________"} &nbsp; Sort Code: {bankSort || "______"} &nbsp; Ref: {payRef || "Invoice #"}</p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="mb-4 grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <p className="font-semibold">Billed to</p>
-                      <p>{billTo}</p>
-                      <p>{siteAddr1}</p>
-                      <p>{siteAddr2}</p>
-                      <p>{siteCity} {sitePost}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">From</p>
-                      <p>{fromName}</p>
-                      <p>{fromAddr1}</p>
-                      <p>{fromAddr2}</p>
-                      <p>{fromCity} {fromPost}</p>
-                      <p>VAT Reg: {fromVat || (youVat ? "GB…" : "—")}</p>
-                      <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
-                    </div>
-                  </div>
-
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-2">Description</th>
-                        <th className="text-right py-2">Amount (ex VAT)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {labourVal>0 && (
-                        <tr className="border-b">
-                          <td className="py-2">Labour</td>
-                          <td className="text-right py-2">{currency(labourVal)}</td>
-                        </tr>
-                      )}
-                      {materialsVal>0 && (
-                        <tr className="border-b">
-                          <td className="py-2">Materials & consumables</td>
-                          <td className="text-right py-2">{currency(materialsVal)}</td>
-                        </tr>
-                      )}
-                      {otherVal>0 && (
-                        <tr className="border-b">
-                          <td className="py-2">Other charges</td>
-                          <td className="text-right py-2">{currency(otherVal)}</td>
-                        </tr>
-                      )}
-                      <tr className="border-b">
-                        <td className="py-2 font-medium">Subtotal</td>
-                        <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
-                      </tr>
-                      {!drcApplies && (
-                        <tr className="border-b">
-                          <td className="py-2">VAT @ 20%</td>
-                          <td className="text-right py-2">{currency(vatAmount)}</td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td className="py-2 font-semibold">Total to invoice</td>
-                        <td className="text-right py-2 font-semibold">{currency(totalToInvoice)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="mt-4 text-xs">
-                    {drcApplies ? (
-                      <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
-                    ) : (
-                      <p className="italic">VAT charged at the prevailing rate.</p>
-                    )}
-                  </div>
-
-                  <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
-                    <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
-                    <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
-                  </div>
-
-                  <div className="mt-4 text-xs text-gray-600">
-                    <p>Bank: {bankName || "__________"}</p>
-                    <p>Account: {bankAcc || "__________"} &nbsp; Sort Code: {bankSort || "______"} &nbsp; Ref: {payRef || "Invoice #"}</p>
+                  {/* Buttons under invoice (won't print) */}
+                  <div className="mt-3 flex gap-3">
+                    <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>window.print()}>
+                      Download / Print
+                    </button>
+                    <button className="px-4 py-2 rounded-lg bg-gray-900 text-white" onClick={emailInvoice}>
+                      Email invoice
+                    </button>
                   </div>
                 </div>
               </div>
