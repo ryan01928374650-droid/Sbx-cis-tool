@@ -25,7 +25,7 @@
   </style>
 </head>
 <body class="bg-gray-50">
-  <div id="root" class="max-w-6xl mx-auto p-4 md:p-8"></div>
+  <div id="root" class="max-w-7xl mx-auto p-4 md:p-8"></div>
 
   <script type="text/babel">
     const currency = (n) =>
@@ -294,11 +294,11 @@
             </div>
           )}
 
-          {/* Step 3 — 3 columns on desktop */}
+          {/* Step 3 — Spacious layout: 1 col (mobile) / 2 cols (lg) / 3 cols (xl) */}
           {step===3 && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
               {/* COL 1: Results summary (not printed) */}
-              <div className="bg-white rounded-2xl shadow p-5 space-y-4">
+              <div className="bg-white rounded-2xl shadow p-6 space-y-4">
                 <h2 className="text-lg font-semibold">Results — what to put on your invoice</h2>
                 <div className="rounded-xl border p-4">
                   <div className="flex justify-between text-sm"><span>Labour (ex VAT)</span><span>{currency(labourVal)}</span></div>
@@ -348,7 +348,7 @@
               </div>
 
               {/* COL 2: Inputs/editor (not printed) */}
-              <div className="bg-white rounded-2xl shadow p-5">
+              <div className="bg-white rounded-2xl shadow p-6">
                 <h2 className="text-lg font-semibold mb-3">Invoice details (live)</h2>
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -392,8 +392,8 @@
                 </div>
               </div>
 
-              {/* COL 3: Printable invoice */}
-              <div className="bg-white rounded-2xl shadow p-5" id="printable">
+              {/* COL 3: Printable invoice (sticky on desktop) */}
+              <div className="bg-white rounded-2xl shadow p-6 xl:sticky xl:top-6 h-fit" id="printable">
                 <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
                 <div className="rounded-2xl border p-6 bg-white">
