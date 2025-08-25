@@ -22,6 +22,9 @@
       --sbx-blue-hover:#1d4ed8;
       --sbx-ink:#111827;
       --sbx-bg:#f9fafb;
+      --sbx-card:#ffffff;
+      --sbx-border:#e5e7eb;
+      --sbx-print:#004aac; /* requested print button colour */
     }
     body {
       font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -33,12 +36,24 @@
     .sbx-btn:hover { background-color: var(--sbx-blue-hover); }
     .sbx-btn-dark { background-color: var(--sbx-ink); color:#fff; transition: background-color .2s ease; }
     .sbx-btn-dark:hover { background-color:#000; }
+    .sbx-btn-print { background-color: var(--sbx-print); color:#fff; }
+    .sbx-btn-print:hover { filter: brightness(0.95); }
 
-    /* Print only the invoice area */
+    /* Print: ONLY the invoice area prints, one A4 page */
     @media print {
+      @page { size: A4; margin: 12mm; }
+      html, body { height: auto !important; }
       body * { visibility: hidden !important; }
       #printable, #printable * { visibility: visible !important; }
-      #printable { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; box-shadow: none !important; }
+      #printable {
+        position: absolute;
+        left: 0; top: 0;
+        width: 190mm !important;         /* inner width to stay on one page */
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        background: #fff !important;
+      }
       table, tr, td, th { page-break-inside: avoid !important; }
     }
   </style>
@@ -55,6 +70,8 @@
       const n = parseFloat(String(v || "").replace(/,/g, ""));
       return isFinite(n) ? Math.max(0, n) : 0;
     };
+
+    const VAT_RATE = 0.2;
 
     const Badge = ({children}) => (
       <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
@@ -117,10 +134,9 @@
       const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
       const otherVal = React.useMemo(()=>clampMoney(other), [other]);
 
-      // VAT / DRC rules
-      const drcApplies = withinCIS && youVat && customerVat && !endUser;
-      const chargeVat  = youVat && !drcApplies;
-
+      // Rules
+      const drcApplies = withinCIS && youVat && customerVat && !endUser;   // DRC only possible within CIS
+      const chargeVat = youVat && !drcApplies;                              // Charge VAT only if VAT-registered and not DRC
       const subtotal = labourVal + materialsVal + otherVal;
       const vatAmount = chargeVat ? subtotal * 0.2 : 0;
       const totalToInvoice = subtotal + vatAmount;
@@ -129,22 +145,6 @@
       const cisDeduction = withinCIS ? (labourVal * cisRate) : 0;
       const expectedTakeHome = totalToInvoice - cisDeduction;
       const drcCustomerVatInfo = drcApplies ? subtotal * 0.2 : 0;
-
-      // Iframe auto-resize for Duda: send height on load/changes/step
-      const sendHeight = React.useCallback(() => {
-        const h = document.documentElement.scrollHeight || document.body.scrollHeight;
-        window.parent?.postMessage({ type: 'SBX_IFRAME_HEIGHT', height: h }, '*');
-      }, []);
-      React.useEffect(() => {
-        const ro = new ResizeObserver(sendHeight);
-        ro.observe(document.body);
-        window.addEventListener('load', sendHeight);
-        const t = setInterval(sendHeight, 1000);
-        const onMsg = (e)=>{ if(e.data && e.data.type==='SBX_REQUEST_HEIGHT') sendHeight(); };
-        window.addEventListener('message', onMsg);
-        return () => { ro.disconnect(); clearInterval(t); window.removeEventListener('load', sendHeight); window.removeEventListener('message', onMsg); };
-      }, [sendHeight]);
-      React.useEffect(() => { sendHeight(); }, [step, sendHeight]);
 
       const reset = () => {
         setStep(1);
@@ -182,7 +182,7 @@
         "Waste Removal / Skip","Other…"
       ];
 
-      // Email draft (manual attach)
+      // Email draft (manual attach using Print->Save as PDF)
       const openEmailDraft = () => {
         const subject = `Invoice ${invNo || ""} from ${fromName || "Subcontractor"}`.trim();
         const body = `Hi,\n\nPlease find attached invoice ${invNo || ""} dated ${invDate || ""}.\n\nRegards,\n${fromName || ""}`;
@@ -246,7 +246,7 @@
                   <label className="flex items-center gap-2"><input type="radio" name="endUser" checked={endUser} onChange={()=>setEndUser(true)} /> Yes (they use/own the building)</label>
                   <label className="flex items-center gap-2"><input type="radio" name="endUser" checked={!endUser} onChange={()=>setEndUser(false)} /> No (contractor/another sub)</label>
                 </div>
-                <p className="text-xs text-gray-500">End Users do not get reverse charge; you charge VAT as normal.</p>
+                <p className="text-xs text-gray-500">End Users <b>do not</b> get reverse charge; you charge VAT as normal.</p>
               </div>
 
               <div className="md:col-span-2 flex justify-between">
@@ -372,13 +372,13 @@
                       <p><span className="font-semibold">Not VAT-registered.</span> No VAT is charged.</p>
                     </div>
                   ) : (drcApplies ? (
-                    <div className="rounded-xl bg-amber-50 border p-3 text-sm">
+                    <div className="rounded-2xl bg-amber-50 border p-3 text-sm">
                       <p><span className="font-semibold">Reverse Charge applies.</span> Do <b>not</b> charge VAT.</p>
                       <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
                       <p className="text-xs text-gray-500 mt-2">Customer’s VAT to account: {currency(drcCustomerVatInfo)}.</p>
                     </div>
                   ) : (
-                    <div className="rounded-xl bg-emerald-50 border p-3 text-sm">
+                    <div className="rounded-2xl bg-emerald-50 border p-3 text-sm">
                       <p><span className="font-semibold">Charge VAT as normal.</span> Reverse charge does not apply.</p>
                     </div>
                   )))}
@@ -397,7 +397,7 @@
                     <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={copyLines}>Copy invoice lines</button>
                   </div>
                   <div className="text-xs text-gray-500 mt-3">
-                    Print or email from the invoice panel.
+                    Use <b>Print</b> to save as PDF, then attach it to your email.
                   </div>
                 </div>
               </div>
@@ -450,10 +450,11 @@
                 </div>
 
                 {/* Invoice (printable) */}
-                <div>
-                  <div className="bg-white rounded-2xl shadow p-6 border border-gray-100" id="printable">
-                    <h2 className="text-lg font-semibold mb-3">Invoice</h2>
+                <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
+                  <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
+                  <!-- PRINTABLE ONLY: this wrapper is the only thing that prints -->
+                  <div id="printable">
                     <div className="rounded-2xl border border-gray-200 p-6 bg-white">
                       <div className="flex items-start justify-between mb-4">
                         <div>
@@ -558,11 +559,16 @@
                       </div>
                     </div>
                   </div>
+                  {/* end #printable */}
 
+                  {/* Action buttons moved OUTSIDE printable so they never print */}
                   <div className="mt-3 flex flex-wrap gap-3">
-                    <button className="px-4 py-2 rounded-lg bg-white border border-gray-200" onClick={()=>window.print()}>Print</button>
+                    <button className="px-4 py-2 rounded-lg sbx-btn-print" onClick={()=>window.print()}>Print</button>
                     <button className="px-4 py-2 rounded-lg sbx-btn-dark" onClick={openEmailDraft}>Open email draft</button>
                   </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Use <b>Print</b> → “Save as PDF”, then attach it to your email.
+                  </p>
                 </div>
               </div>
             </div>
