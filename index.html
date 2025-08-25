@@ -39,11 +39,23 @@
     .sbx-btn-dark { background-color: var(--sbx-ink); color:#fff; transition: background-color .2s ease; }
     .sbx-btn-dark:hover { background-color:#000; }
 
-    /* Print: only invoice preview prints if user uses window.print */
+    /* A4 sheet (used for both Print and PDF render target) */
+    /* 794px ≈ 210mm @ 96dpi; inner on print we clamp to 190mm within 12mm margins */
+    #invoice-sheet {
+      width: 794px;
+      background: #ffffff;
+      margin: 0 auto;
+      box-shadow: none;
+    }
+
+    /* Print: show ONLY the invoice sheet, lock to single A4 page */
     @media print {
+      @page { size: A4; margin: 12mm; }
+      html, body { height: auto !important; }
       body * { visibility: hidden !important; }
-      #printable, #printable * { visibility: visible !important; }
-      #printable { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; box-shadow: none !important; }
+      #invoice-sheet, #invoice-sheet * { visibility: visible !important; }
+      #invoice-sheet { position: absolute; left: 0; top: 0; width: 190mm; } /* inner width fits one page */
+      table, tr, td, th { page-break-inside: avoid !important; }
     }
   </style>
 </head>
@@ -172,18 +184,25 @@
         "Waste Removal / Skip","Other…"
       ];
 
-      // Generate PDF of the invoice preview
+      // --- PDF: render ONLY the white A4 sheet ---
       const downloadPDF = async () => {
-        const el = document.getElementById('printable');
+        const el = document.getElementById('invoice-sheet');
+        if (!el) return;
         const fileName = `Invoice-${(invNo || '').replace(/[^A-Za-z0-9-_]/g,'') || 'SBX'}.pdf`;
-        const opt = {
-          margin:       [10,10,10,10],  // mm
-          filename:     fileName,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
-          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-        await html2pdf().set(opt).from(el).save();
+        await html2pdf().set({
+          margin: 12,                                           // mm (matches print)
+          filename: fileName,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            windowWidth: el.scrollWidth || 794,                // ensure correct layout width
+            letterRendering: true
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all','css','legacy'] }
+        }).from(el).save();
       };
 
       // Open a short email draft (user attaches PDF they just downloaded)
@@ -453,12 +472,13 @@
                   </div>
                 </div>
 
-                {/* Invoice (printable) */}
-                <div>
-                  <div className="bg-white rounded-2xl shadow p-6 border border-gray-100" id="printable">
-                    <h2 className="text-lg font-semibold mb-3">Invoice</h2>
+                {/* Invoice (printable container) */}
+                <div className="bg-white rounded-2xl shadow p-6 border border-gray-100" id="printable">
+                  <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
-                    <div className="rounded-2xl border border-gray-200 p-6 bg-white">
+                  <!-- Fixed-width white A4 sheet: this is the only element used for Print/PDF -->
+                  <div id="invoice-sheet">
+                    <div className="p-6">
                       <div className="flex items-start justify-between mb-4">
                         <div>
                           <h3 className="text-lg font-semibold">INVOICE</h3>
@@ -562,6 +582,7 @@
                       </div>
                     </div>
                   </div>
+                  <!-- /#invoice-sheet -->
 
                   <div className="mt-3 flex flex-wrap gap-3">
                     <button className="px-4 py-2 rounded-lg sbx-btn" onClick={downloadPDF}>Download PDF</button>
