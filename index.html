@@ -154,7 +154,6 @@
         "Waste Removal / Skip","Other…"
       ];
 
-      /* NEW: Email invoice helper */
       const emailInvoice = () => {
         const lines = [];
         const job = (showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType))
@@ -347,57 +346,66 @@
             </div>
           )}
 
-          {/* Step 3 — Results as a full row, then a 2-column grid below */}
+          {/* Step 3 — Narrow results row (3 mini-cards), then 2 cols below */}
           {step===3 && (
             <div className="space-y-8">
-              {/* ROW 1: Results summary (full width, not printed) */}
-              <div className="bg-white rounded-2xl shadow p-6 space-y-4">
-                <h2 className="text-lg font-semibold">Results — what to put on your invoice</h2>
-                <div className="rounded-xl border p-4">
-                  <div className="flex justify-between text-sm"><span>Labour (ex VAT)</span><span>{currency(labourVal)}</span></div>
-                  <div className="flex justify-between text-sm"><span>Materials (ex VAT)</span><span>{currency(materialsVal)}</span></div>
-                  <div className="flex justify-between text-sm"><span>Other (ex VAT)</span><span>{currency(otherVal)}</span></div>
-                  <div className="my-2 border-t" />
-                  <div className="flex justify-between font-medium"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
-                  {!drcApplies && (
-                    <div className="flex justify-between text-sm"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>
-                  )}
-                  <div className="flex justify-between font-semibold text-lg mt-2"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
-                  <div className="my-2 border-t" />
-                  <div className="flex justify-between text-sm"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:"(none)"}</span><span className="text-red-600">- {currency(cisDeduction)}</span></div>
-                  <div className="flex justify-between font-semibold mt-1"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+              {/* ROW 1: Results split across 3 columns */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Card 1: Key figures */}
+                <div className="bg-white rounded-2xl shadow p-5">
+                  <h3 className="font-semibold mb-3">Figures</h3>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between"><span>Labour (ex VAT)</span><span>{currency(labourVal)}</span></div>
+                    <div className="flex justify-between"><span>Materials (ex VAT)</span><span>{currency(materialsVal)}</span></div>
+                    <div className="flex justify-between"><span>Other (ex VAT)</span><span>{currency(otherVal)}</span></div>
+                    <div className="border-t my-2"></div>
+                    <div className="flex justify-between font-medium"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
+                    {!drcApplies && (
+                      <div className="flex justify-between"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>
+                    )}
+                    <div className="flex justify-between font-semibold"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
+                    <div className="border-t my-2"></div>
+                    <div className="flex justify-between text-red-600"><span>CIS on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
+                    <div className="flex justify-between font-semibold"><span>You’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                  </div>
                 </div>
 
-                {drcApplies ? (
-                  <div className="rounded-xl bg-amber-50 border p-4 text-sm">
-                    <p><span className="font-semibold">Domestic Reverse Charge applies.</span> Do <b>not</b> charge VAT. Add wording:</p>
-                    <p className="italic mt-1">“Domestic Reverse Charge for building and construction services applies. Customer to account for VAT to HMRC at the applicable rate.”</p>
-                    <p className="text-xs text-gray-500 mt-2">For your customer’s info: approx VAT they’ll account for is {currency(drcCustomerVatInfo)}.</p>
-                  </div>
-                ) : (
-                  <div className="rounded-xl bg-emerald-50 border p-4 text-sm">
-                    <p><span className="font-semibold">Charge VAT as normal.</span> Reverse charge does not apply based on your answers.</p>
-                  </div>
-                )}
-
-                <div className="rounded-xl bg-gray-100 p-4 text-xs leading-relaxed">
-                  <p className="font-medium">Invoice checklist:</p>
-                  <ul className="list-disc pl-5 mt-2 space-y-1">
-                    <li>Show <b>Labour</b> and <b>Materials</b> on separate lines.</li>
-                    <li>{drcApplies ? "Do NOT add VAT; include the DRC wording." : "Add VAT @ 20% on the subtotal (unless zero-rated)."} </li>
-                    <li>Include <b>CIS deduction</b> line for the contractor’s reference.</li>
-                    <li>Make <b>Total to invoice</b> and <b>Expected amount you’ll receive</b> obvious.</li>
+                {/* Card 2: DRC / VAT note */}
+                <div className="bg-white rounded-2xl shadow p-5">
+                  <h3 className="font-semibold mb-3">VAT / DRC</h3>
+                  {drcApplies ? (
+                    <div className="rounded-xl bg-amber-50 border p-3 text-sm">
+                      <p><span className="font-semibold">Reverse Charge applies.</span> Do <b>not</b> charge VAT.</p>
+                      <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
+                      <p className="text-xs text-gray-500 mt-2">Customer’s VAT to account: {currency(drcCustomerVatInfo)}.</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-emerald-50 border p-3 text-sm">
+                      <p><span className="font-semibold">Charge VAT as normal.</span> Reverse charge does not apply.</p>
+                    </div>
+                  )}
+                  <ul className="text-xs text-gray-600 mt-3 list-disc pl-5 space-y-1">
+                    <li>Keep labour and materials separate.</li>
+                    <li>Include CIS deduction line.</li>
+                    <li>Show total and expected take-home clearly.</li>
                   </ul>
                 </div>
 
-                <div className="flex flex-wrap gap-3">
-                  <button className="px-4 py-2 rounded-lg bg-gray-200" onClick={()=>setStep(2)}>Edit amounts</button>
-                  <button className="px-4 py-2 rounded-lg bg-gray-100" onClick={reset}>Start over</button>
-                  <button className="px-4 py-2 rounded-lg bg-gray-100" onClick={copyLines}>Copy invoice lines</button>
+                {/* Card 3: Quick actions */}
+                <div className="bg-white rounded-2xl shadow p-5">
+                  <h3 className="font-semibold mb-3">Quick actions</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="px-3 py-2 rounded-lg bg-gray-200" onClick={()=>setStep(2)}>Edit amounts</button>
+                    <button className="px-3 py-2 rounded-lg bg-gray-100" onClick={reset}>Start over</button>
+                    <button className="px-3 py-2 rounded-lg bg-gray-100" onClick={copyLines}>Copy invoice lines</button>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-3">
+                    The full invoice is on the right; print or email from there.
+                  </div>
                 </div>
               </div>
 
-              {/* ROW 2: Two columns below – inputs (left) & invoice (right) */}
+              {/* ROW 2: Two columns — inputs (left) & invoice (right) */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* LEFT: Inputs/editor (not printed) */}
                 <div className="bg-white rounded-2xl shadow p-6">
