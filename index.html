@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SBX CIS Smart Invoicing & Deduction Checker</title>
 
+  <!-- Google Fonts: Montserrat -->
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <!-- React + ReactDOM (UMD) -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -14,7 +17,36 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
+    :root{
+      --sbx-blue:#2563eb;
+      --sbx-blue-hover:#1d4ed8;
+      --sbx-ink:#111827;
+      --sbx-bg:#f9fafb;
+      --sbx-card:#ffffff;
+      --sbx-border:#e5e7eb;
+    }
+    body {
+      font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--sbx-ink);
+      background: var(--sbx-bg);
+    }
     .step-dot { height:8px; width:8px; border-radius:9999px; }
+
+    /* Buttons */
+    .sbx-btn {
+      background-color: var(--sbx-blue);
+      color: #fff;
+      transition: background-color .2s ease;
+    }
+    .sbx-btn:hover { background-color: var(--sbx-blue-hover); }
+    .sbx-btn-dark {
+      background-color: var(--sbx-ink);
+      color:#fff;
+      transition: background-color .2s ease;
+    }
+    .sbx-btn-dark:hover { background-color:#000; }
+
+    /* Print only the invoice preview */
     @media print {
       body * { visibility: hidden !important; }
       #printable, #printable * { visibility: visible !important; }
@@ -98,9 +130,9 @@
       const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
       const otherVal = React.useMemo(()=>clampMoney(other), [other]);
 
-      // Logic
-      const drcApplies = withinCIS && youVat && customerVat && !endUser;
-      const chargeVat = youVat && !drcApplies;
+      // Rules
+      const drcApplies = withinCIS && youVat && customerVat && !endUser;   // DRC only possible within CIS
+      const chargeVat = youVat && !drcApplies;                              // Only charge VAT if you’re VAT-registered and DRC doesn’t apply
 
       const subtotal = labourVal + materialsVal + otherVal;
       const vatAmount = chargeVat ? subtotal * VAT_RATE : 0;
@@ -147,6 +179,7 @@
         "Waste Removal / Skip","Other…"
       ];
 
+      // Email invoice helper
       const emailInvoice = () => {
         const lines = [];
         const job = (showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType))
@@ -206,6 +239,7 @@
 
       return (
         <div className="space-y-6">
+          {/* Header */}
           <div className="flex items-start md:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -225,6 +259,7 @@
             </p>
           </div>
 
+          {/* Step 1 */}
           {step===1 ? (
             <div className="bg-white rounded-2xl shadow p-5 grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
@@ -263,11 +298,12 @@
 
               <div className="md:col-span-2 flex justify-between">
                 <div className="text-xs text-gray-500">Step 1 of 3</div>
-                <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>setStep(2)}>Continue</button>
+                <button className="px-4 py-2 rounded-lg sbx-btn" onClick={()=>setStep(2)}>Continue</button>
               </div>
             </div>
           ) : null}
 
+          {/* Step 2 */}
           {step===2 ? (
             <div className="bg-white rounded-2xl shadow p-5">
               <div className="grid gap-6 md:grid-cols-3">
@@ -307,7 +343,6 @@
                 <div className="space-y-2">
                   <label className="font-medium">Materials & consumables (ex VAT)</label>
                   <input inputMode="decimal" className="border rounded-lg p-2 w-full" placeholder="e.g. 640" value={materials} onChange={(e)=>setMaterials(e.target.value)} />
-                  <p className="text-xs text-gray-500">Excluded from CIS deduction.</p>
                 </div>
 
                 <div className="space-y-2">
@@ -333,18 +368,20 @@
 
               <div className="flex justify-between mt-4">
                 <div className="text-xs text-gray-500">Step 2 of 3</div>
-                <div>
-                  <button className="px-4 py-2 rounded-lg bg-gray-200 mr-2" onClick={()=>setStep(1)}>Back</button>
-                  <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>setStep(3)} disabled={subtotal<=0}>See results</button>
+                <div className="flex gap-2">
+                  <button className="px-4 py-2 rounded-lg bg-white border border-gray-200" onClick={()=>setStep(1)}>Back</button>
+                  <button className="px-4 py-2 rounded-lg sbx-btn text-white" onClick={()=>setStep(3)} disabled={subtotal<=0}>See results</button>
                 </div>
               </div>
             </div>
           ) : null}
 
+          {/* Step 3 — Results row (3 cards), then 2 columns below */}
           {step===3 ? (
             <div className="space-y-8">
+              {/* 3 compact result cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white rounded-2xl shadow p-5">
+                <div className="bg-white rounded-2xl shadow p-5 border border-gray-100">
                   <h3 className="font-semibold mb-3">Figures</h3>
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between"><span>Labour (ex VAT)</span><span>{currency(labourVal)}</span></div>
@@ -352,7 +389,7 @@
                     <div className="flex justify-between"><span>Other (ex VAT)</span><span>{currency(otherVal)}</span></div>
                     <div className="border-t my-2"></div>
                     <div className="flex justify-between font-medium"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
-                    {chargeVat ? (
+                    { (youVat && !drcApplies) ? (
                       <div className="flex justify-between"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>
                     ) : null}
                     <div className="flex justify-between font-semibold"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
@@ -371,7 +408,7 @@
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow p-5">
+                <div className="bg-white rounded-2xl shadow p-5 border border-gray-100">
                   <h3 className="font-semibold mb-3">VAT / DRC</h3>
                   {!withinCIS ? (
                     <div className="rounded-xl bg-slate-50 border p-3 text-sm">
@@ -400,12 +437,12 @@
                   </ul>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow p-5">
+                <div className="bg-white rounded-2xl shadow p-5 border border-gray-100">
                   <h3 className="font-semibold mb-3">Quick actions</h3>
                   <div className="flex flex-wrap gap-2">
-                    <button className="px-3 py-2 rounded-lg bg-gray-200" onClick={()=>setStep(2)}>Edit amounts</button>
-                    <button className="px-3 py-2 rounded-lg bg-gray-100" onClick={reset}>Start over</button>
-                    <button className="px-3 py-2 rounded-lg bg-gray-100" onClick={copyLines}>Copy invoice lines</button>
+                    <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={()=>setStep(2)}>Edit amounts</button>
+                    <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={reset}>Start over</button>
+                    <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={copyLines}>Copy invoice lines</button>
                   </div>
                   <div className="text-xs text-gray-500 mt-3">
                     The full invoice is on the right; print or email from there.
@@ -413,8 +450,10 @@
                 </div>
               </div>
 
+              {/* Inputs + Invoice */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white rounded-2xl shadow p-6">
+                {/* Inputs */}
+                <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
                   <h2 className="text-lg font-semibold mb-3">Invoice details (live)</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -458,11 +497,12 @@
                   </div>
                 </div>
 
+                {/* Invoice (printable) */}
                 <div>
-                  <div className="bg-white rounded-2xl shadow p-6" id="printable">
+                  <div className="bg-white rounded-2xl shadow p-6 border border-gray-100" id="printable">
                     <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
-                    <div className="rounded-2xl border p-6 bg-white">
+                    <div className="rounded-2xl border border-gray-200 p-6 bg-white">
                       <div className="flex items-start justify-between mb-4">
                         <div>
                           <h3 className="text-lg font-semibold">INVOICE</h3>
@@ -527,7 +567,7 @@
                             <td className="py-2 font-medium">Subtotal</td>
                             <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
                           </tr>
-                          {chargeVat ? (
+                          { (youVat && !drcApplies) ? (
                             <tr className="border-b">
                               <td className="py-2">VAT @ 20%</td>
                               <td className="text-right py-2">{currency(vatAmount)}</td>
@@ -568,12 +608,8 @@
                   </div>
 
                   <div className="mt-3 flex gap-3">
-                    <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=>window.print()}>
-                      Download / Print
-                    </button>
-                    <button className="px-4 py-2 rounded-lg bg-gray-900 text-white" onClick={emailInvoice}>
-                      Email invoice
-                    </button>
+                    <button className="px-4 py-2 rounded-lg sbx-btn" onClick={()=>window.print()}>Download / Print</button>
+                    <button className="px-4 py-2 rounded-lg sbx-btn-dark" onClick={emailInvoice}>Email invoice</button>
                   </div>
                 </div>
               </div>
