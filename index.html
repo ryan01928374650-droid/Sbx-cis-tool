@@ -16,9 +16,6 @@
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- html2pdf for client-side PDF -->
-  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-
   <style>
     :root{
       --sbx-blue:#2563eb;
@@ -39,22 +36,21 @@
     .sbx-btn-dark { background-color: var(--sbx-ink); color:#fff; transition: background-color .2s ease; }
     .sbx-btn-dark:hover { background-color:#000; }
 
-    /* A4 sheet (used for both Print and PDF render target) */
-    /* 794px ≈ 210mm @ 96dpi; inner on print we clamp to 190mm within 12mm margins */
-    #invoice-sheet {
-      width: 794px;
-      background: #ffffff;
-      margin: 0 auto;
-      box-shadow: none;
-    }
-
-    /* Print: show ONLY the invoice sheet, lock to single A4 page */
+    /* Print: ONLY the invoice area prints, one A4 page */
     @media print {
       @page { size: A4; margin: 12mm; }
       html, body { height: auto !important; }
       body * { visibility: hidden !important; }
-      #invoice-sheet, #invoice-sheet * { visibility: visible !important; }
-      #invoice-sheet { position: absolute; left: 0; top: 0; width: 190mm; } /* inner width fits one page */
+      #printable, #printable * { visibility: visible !important; }
+      #printable {
+        position: absolute;
+        left: 0; top: 0;
+        width: 190mm !important;         /* inner width to stay on one page */
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        background: #fff !important;
+      }
       table, tr, td, th { page-break-inside: avoid !important; }
     }
   </style>
@@ -137,8 +133,7 @@
 
       // Rules
       const drcApplies = withinCIS && youVat && customerVat && !endUser;   // DRC only possible within CIS
-      const chargeVat = youVat && !drcApplies;                              // Only charge VAT if you’re VAT-registered and DRC doesn’t apply
-
+      const chargeVat = youVat && !drcApplies;                              // Charge VAT only if VAT-registered and not DRC
       const subtotal = labourVal + materialsVal + otherVal;
       const vatAmount = chargeVat ? subtotal * 0.2 : 0;
       const totalToInvoice = subtotal + vatAmount;
@@ -184,28 +179,7 @@
         "Waste Removal / Skip","Other…"
       ];
 
-      // --- PDF: render ONLY the white A4 sheet ---
-      const downloadPDF = async () => {
-        const el = document.getElementById('invoice-sheet');
-        if (!el) return;
-        const fileName = `Invoice-${(invNo || '').replace(/[^A-Za-z0-9-_]/g,'') || 'SBX'}.pdf`;
-        await html2pdf().set({
-          margin: 12,                                           // mm (matches print)
-          filename: fileName,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            windowWidth: el.scrollWidth || 794,                // ensure correct layout width
-            letterRendering: true
-          },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all','css','legacy'] }
-        }).from(el).save();
-      };
-
-      // Open a short email draft (user attaches PDF they just downloaded)
+      // Email draft (manual attach using Print->Save as PDF)
       const openEmailDraft = () => {
         const subject = `Invoice ${invNo || ""} from ${fromName || "Subcontractor"}`.trim();
         const body = `Hi,\n\nPlease find attached invoice ${invNo || ""} dated ${invDate || ""}.\n\nRegards,\n${fromName || ""}`;
@@ -420,7 +394,7 @@
                     <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={copyLines}>Copy invoice lines</button>
                   </div>
                   <div className="text-xs text-gray-500 mt-3">
-                    Download the PDF below, then attach it to your email.
+                    Use <b>Print</b> to save as PDF, then attach it to your email.
                   </div>
                 </div>
               </div>
@@ -472,124 +446,119 @@
                   </div>
                 </div>
 
-                {/* Invoice (printable container) */}
-                <div className="bg-white rounded-2xl shadow p-6 border border-gray-100" id="printable">
+                {/* Invoice (printable) */}
+                <div id="printable" className="bg-white rounded-2xl shadow p-6 border border-gray-100">
                   <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
-                  <!-- Fixed-width white A4 sheet: this is the only element used for Print/PDF -->
-                  <div id="invoice-sheet">
-                    <div className="p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h3 className="text-lg font-semibold">INVOICE</h3>
-                          {showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType) ? (
-                            <p className="text-xs text-gray-500">{(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works</p>
-                          ) : null}
-                        </div>
-                        <div className="text-right text-xs text-gray-500">
-                          <p>Date: {invDate || "__________"}</p>
-                          <p>Invoice #: {invNo || "__________"}</p>
-                        </div>
+                  <div className="rounded-2xl border border-gray-200 p-6 bg-white">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">INVOICE</h3>
+                        {showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType) ? (
+                          <p className="text-xs text-gray-500">{(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works</p>
+                        ) : null}
                       </div>
-
-                      <div className="mb-4 grid grid-cols-2 gap-4 text-xs">
-                        <div>
-                          <p className="font-semibold">Billed to</p>
-                          <p>{billTo}</p>
-                          <p>{siteAddr1}</p>
-                          <p>{siteAddr2}</p>
-                          <p>{siteCity} {sitePost}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold">From</p>
-                          <p>{fromName}</p>
-                          <p>{fromAddr1}</p>
-                          <p>{fromAddr2}</p>
-                          <p>{fromCity} {fromPost}</p>
-                          {youVat ? <p>VAT Reg: {fromVat || "GB…"}</p> : null}
-                          {withinCIS ? (
-                            <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-2">Description</th>
-                            <th className="text-right py-2">Amount (ex VAT)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {labourVal>0 ? (
-                            <tr className="border-b">
-                              <td className="py-2">Labour</td>
-                              <td className="text-right py-2">{currency(labourVal)}</td>
-                            </tr>
-                          ) : null}
-                          {materialsVal>0 ? (
-                            <tr className="border-b">
-                              <td className="py-2">Materials & consumables</td>
-                              <td className="text-right py-2">{currency(materialsVal)}</td>
-                            </tr>
-                          ) : null}
-                          {otherVal>0 ? (
-                            <tr className="border-b">
-                              <td className="py-2">Other charges</td>
-                              <td className="text-right py-2">{currency(otherVal)}</td>
-                            </tr>
-                          ) : null}
-                          <tr className="border-b">
-                            <td className="py-2 font-medium">Subtotal</td>
-                            <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
-                          </tr>
-                          {(youVat && !drcApplies) ? (
-                            <tr className="border-b">
-                              <td className="py-2">VAT @ 20%</td>
-                              <td className="text-right py-2">{currency(vatAmount)}</td>
-                            </tr>
-                          ) : null}
-                          <tr>
-                            <td className="py-2 font-semibold">Total to invoice</td>
-                            <td className="text-right py-2 font-semibold">{currency(totalToInvoice)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <div className="mt-4 text-xs">
-                        {!withinCIS
-                          ? <p className="italic">Work outside CIS. Reverse charge never applies. VAT depends only on supplier’s VAT status.</p>
-                          : (!youVat
-                              ? <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
-                              : (drcApplies
-                                  ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
-                                  : <p className="italic">VAT charged at the prevailing rate.</p>
-                                )
-                            )
-                        }
-                      </div>
-
-                      {withinCIS ? (
-                        <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
-                          <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
-                          <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
-                        </div>
-                      ) : null}
-
-                      <div className="mt-4 text-xs text-gray-600">
-                        <p>Bank: {bankName || "__________"}</p>
-                        <p>Account: {bankAcc || "__________"} &nbsp; Sort Code: {bankSort || "______"} &nbsp; Ref: {payRef || "Invoice #"}</p>
+                      <div className="text-right text-xs text-gray-500">
+                        <p>Date: {invDate || "__________"}</p>
+                        <p>Invoice #: {invNo || "__________"}</p>
                       </div>
                     </div>
+
+                    <div className="mb-4 grid grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <p className="font-semibold">Billed to</p>
+                        <p>{billTo}</p>
+                        <p>{siteAddr1}</p>
+                        <p>{siteAddr2}</p>
+                        <p>{siteCity} {sitePost}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">From</p>
+                        <p>{fromName}</p>
+                        <p>{fromAddr1}</p>
+                        <p>{fromAddr2}</p>
+                        <p>{fromCity} {fromPost}</p>
+                        {youVat ? <p>VAT Reg: {fromVat || "GB…"}</p> : null}
+                        {withinCIS ? (
+                          <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">Description</th>
+                          <th className="text-right py-2">Amount (ex VAT)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {labourVal>0 ? (
+                          <tr className="border-b">
+                            <td className="py-2">Labour</td>
+                            <td className="text-right py-2">{currency(labourVal)}</td>
+                          </tr>
+                        ) : null}
+                        {materialsVal>0 ? (
+                          <tr className="border-b">
+                            <td className="py-2">Materials & consumables</td>
+                            <td className="text-right py-2">{currency(materialsVal)}</td>
+                          </tr>
+                        ) : null}
+                        {otherVal>0 ? (
+                          <tr className="border-b">
+                            <td className="py-2">Other charges</td>
+                            <td className="text-right py-2">{currency(otherVal)}</td>
+                          </tr>
+                        ) : null}
+                        <tr className="border-b">
+                          <td className="py-2 font-medium">Subtotal</td>
+                          <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
+                        </tr>
+                        {(youVat && !drcApplies) ? (
+                          <tr className="border-b">
+                            <td className="py-2">VAT @ 20%</td>
+                            <td className="text-right py-2">{currency(vatAmount)}</td>
+                          </tr>
+                        ) : null}
+                        <tr>
+                          <td className="py-2 font-semibold">Total to invoice</td>
+                          <td className="text-right py-2 font-semibold">{currency(totalToInvoice)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <div className="mt-4 text-xs">
+                      {!withinCIS
+                        ? <p className="italic">Work outside CIS. Reverse charge never applies. VAT depends only on supplier’s VAT status.</p>
+                        : (!youVat
+                            ? <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
+                            : (drcApplies
+                                ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
+                                : <p className="italic">VAT charged at the prevailing rate.</p>
+                              )
+                          )
+                      }
+                    </div>
+
+                    {withinCIS ? (
+                      <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
+                        <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
+                        <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 text-xs text-gray-600">
+                      <p>Bank: {bankName || "__________"}</p>
+                      <p>Account: {bankAcc || "__________"} &nbsp; Sort Code: {bankSort || "______"} &nbsp; Ref: {payRef || "Invoice #"}</p>
+                    </div>
                   </div>
-                  <!-- /#invoice-sheet -->
 
                   <div className="mt-3 flex flex-wrap gap-3">
-                    <button className="px-4 py-2 rounded-lg sbx-btn" onClick={downloadPDF}>Download PDF</button>
                     <button className="px-4 py-2 rounded-lg bg-white border border-gray-200" onClick={()=>window.print()}>Print</button>
                     <button className="px-4 py-2 rounded-lg sbx-btn-dark" onClick={openEmailDraft}>Open email draft</button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">Attach the downloaded PDF to your email.</p>
+                  <p className="text-xs text-gray-500 mt-2">Use <b>Print</b> → “Save as PDF”, then attach it to your email.</p>
                 </div>
               </div>
             </div>
