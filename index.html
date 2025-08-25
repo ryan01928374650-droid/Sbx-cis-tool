@@ -2,21 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SBX CIS Smart Invoicing & Deduction Checker</title>
 
-  <!-- Google Fonts: Montserrat -->
+  <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- React + ReactDOM (UMD) -->
+  <!-- React + ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
 
-  <!-- TailwindCSS CDN -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- html2pdf for client-side PDF -->
+  <!-- html2pdf (PDF generation) -->
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 
   <style>
@@ -25,54 +25,35 @@
       --sbx-blue-hover:#1d4ed8;
       --sbx-ink:#111827;
       --sbx-bg:#f9fafb;
-      --sbx-card:#ffffff;
       --sbx-border:#e5e7eb;
     }
-    body {
-      font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color: var(--sbx-ink);
-      background: var(--sbx-bg);
-    }
+    body { font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--sbx-bg); color: var(--sbx-ink); }
     .step-dot { height:8px; width:8px; border-radius:9999px; }
+    .sbx-btn { background: var(--sbx-blue); color:#fff; transition: background .2s; }
+    .sbx-btn:hover { background: var(--sbx-blue-hover); }
+    .sbx-btn-dark { background: var(--sbx-ink); color:#fff; transition: background .2s; }
+    .sbx-btn-dark:hover { background:#000; }
 
-    /* Buttons */
-    .sbx-btn {
-      background-color: var(--sbx-blue);
-      color:#fff;
-      transition: background-color .2s ease;
-    }
-    .sbx-btn:hover { background-color: var(--sbx-blue-hover); }
-    .sbx-btn-dark {
-      background-color: var(--sbx-ink);
-      color:#fff;
-      transition: background-color .2s ease;
-    }
-    .sbx-btn-dark:hover { background-color:#000; }
-
-    /* A4 sheet sizing used for BOTH print and PDF (210mm x 297mm) */
-    .a4-sheet {
-      width: 190mm;            /* content width inside margins */
+    /* A4 sheet used for both PDF & Print. Use px on-screen for reliable rasterisation; mm in print */
+    #invoice-sheet {
+      width: 794px;              /* ~210mm @ 96dpi */
       background:#ffffff;
       margin: 0 auto;
-      box-shadow: none;        /* no shadows in output */
-      page-break-inside: avoid;
+      box-shadow: none;
     }
-    .no-break { page-break-inside: avoid; }
 
-    /* PRINT: print ONLY the sheet; lock to A4 and avoid extra page */
+    /* Print only the invoice area, one A4 page */
     @media print {
       @page { size: A4; margin: 12mm; }
       html, body { height: auto !important; }
       body * { visibility: hidden !important; }
-      #printable, #printable * { visibility: visible !important; }
-      #printable { position: absolute; left: 0; top: 0; width: 100%; }
-      /* Ensure one page by avoiding accidental page breaks */
-      #invoice-sheet { page-break-after: avoid; page-break-before: avoid; }
+      #invoice-sheet, #invoice-sheet * { visibility: visible !important; }
+      #invoice-sheet { position: absolute; left:0; top:0; width: 190mm; } /* inner width within margins */
       table, tr, td, th { page-break-inside: avoid !important; }
     }
   </style>
 </head>
-<body class="bg-gray-50">
+<body>
   <div id="root" class="max-w-7xl mx-auto p-4 md:p-8"></div>
 
   <script type="text/babel">
@@ -122,7 +103,7 @@
       const [other, setOther] = React.useState("");
       const [cisStatus, setCisStatus] = React.useState("net20");
 
-      // Step 3 — invoice meta & parties (live-bound)
+      // Step 3 — invoice meta & parties
       const today = new Date().toISOString().slice(0,10);
       const [fromName, setFromName] = React.useState("Your Trading Name");
       const [fromAddr1, setFromAddr1] = React.useState("");
@@ -146,9 +127,9 @@
       const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
       const otherVal = React.useMemo(()=>clampMoney(other), [other]);
 
-      // Rules
-      const drcApplies = withinCIS && youVat && customerVat && !endUser; // DRC only possible within CIS
-      const chargeVat = youVat && !drcApplies;                           // Only charge VAT if VAT-registered and DRC doesn't apply
+      // VAT / DRC rules
+      const drcApplies = withinCIS && youVat && customerVat && !endUser;
+      const chargeVat  = youVat && !drcApplies;
 
       const subtotal = labourVal + materialsVal + otherVal;
       const vatAmount = chargeVat ? subtotal * 0.2 : 0;
@@ -158,6 +139,22 @@
       const cisDeduction = withinCIS ? (labourVal * cisRate) : 0;
       const expectedTakeHome = totalToInvoice - cisDeduction;
       const drcCustomerVatInfo = drcApplies ? subtotal * 0.2 : 0;
+
+      // Iframe auto-resize: send height to Duda on load/changes/step
+      const sendHeight = React.useCallback(() => {
+        const h = document.documentElement.scrollHeight || document.body.scrollHeight;
+        window.parent?.postMessage({ type: 'SBX_IFRAME_HEIGHT', height: h }, '*');
+      }, []);
+      React.useEffect(() => {
+        const ro = new ResizeObserver(sendHeight);
+        ro.observe(document.body);
+        window.addEventListener('load', sendHeight);
+        const t = setInterval(sendHeight, 1000);
+        const onMsg = (e)=>{ if(e.data && e.data.type==='SBX_REQUEST_HEIGHT') sendHeight(); };
+        window.addEventListener('message', onMsg);
+        return () => { ro.disconnect(); clearInterval(t); window.removeEventListener('load', sendHeight); window.removeEventListener('message', onMsg); };
+      }, [sendHeight]);
+      React.useEffect(() => { sendHeight(); }, [step, sendHeight]);
 
       const reset = () => {
         setStep(1);
@@ -183,56 +180,22 @@
         navigator.clipboard.writeText(rows.join("\n")).then(()=>alert("Invoice lines copied to clipboard."));
       };
 
-      const JOB_TYPES = [
-        "General building","Carpentry / Joinery","Plastering / Rendering","Painting & Decorating",
-        "Roofing","Tiling (wall/floor)","Bricklaying","Groundworks / Foundations",
-        "Electrical (1st/2nd fix)","Plumbing","Heating & Gas","Air Conditioning / HVAC",
-        "Glazing / Windows / Doors","Steelwork / RSJs","Scaffolding","Plant Hire / Operator",
-        "Landscaping / Fencing","Drainage","Demolition / Strip-out","Insulation","Drylining / Partitions",
-        "Flooring (carpet/vinyl/wood)","Kitchen Fitting","Bathroom Fitting","Solar PV / Renewables",
-        "Asbestos (licensed/non-licensed)","Fire Protection","Security / Alarms / CCTV",
-        "Data / Networking","Cleaning / Sparkle clean","Testing & Inspection","Site Management / Supervision",
-        "Waste Removal / Skip","Other…"
-      ];
-
-      // ==== AUTO-RESIZE: post height to parent (Duda) on load, changes & step switches ====
-      const sendHeight = React.useCallback(() => {
-        const h = document.documentElement.scrollHeight || document.body.scrollHeight;
-        window.parent?.postMessage({ type: 'SBX_IFRAME_HEIGHT', height: h }, '*');
-      }, []);
-      React.useEffect(() => {
-        const ro = new ResizeObserver(sendHeight);
-        ro.observe(document.body);
-        window.addEventListener('load', sendHeight);
-        const t = setInterval(sendHeight, 1000);
-        const onMsg = (e)=>{ if(e.data && e.data.type==='SBX_REQUEST_HEIGHT') sendHeight(); };
-        window.addEventListener('message', onMsg);
-        return () => { ro.disconnect(); clearInterval(t); window.removeEventListener('load', sendHeight); window.removeEventListener('message', onMsg); };
-      }, [sendHeight]);
-      React.useEffect(() => { sendHeight(); }, [step, sendHeight]);
-
-      // ==== PDF: render the fixed-width A4 sheet only ====
+      // PDF (render the invoice sheet only)
       const downloadPDF = async () => {
-        const el = document.getElementById('invoice-sheet'); // << render the sheet only
+        const el = document.getElementById('invoice-sheet');
         if (!el) return;
         const fileName = `Invoice-${(invNo || '').replace(/[^A-Za-z0-9-_]/g,'') || 'SBX'}.pdf`;
         const opt = {
-          margin:       12, // mm (matches @page margin)
-          filename:     fileName,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            windowWidth: el.scrollWidth, // ensure correct layout width
-          },
-          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak:    { mode: ['avoid-all','css','legacy'] }
+          margin: 12, // mm
+          filename: fileName,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: el.scrollWidth || 794 },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['avoid-all','css','legacy'] }
         };
         await html2pdf().set(opt).from(el).save();
       };
 
-      // Open a short email draft (user attaches PDF they just downloaded)
       const openEmailDraft = () => {
         const subject = `Invoice ${invNo || ""} from ${fromName || "Subcontractor"}`.trim();
         const body = `Hi,\n\nPlease find attached invoice ${invNo || ""} dated ${invDate || ""}.\n\nRegards,\n${fromName || ""}`;
@@ -263,7 +226,7 @@
           </div>
 
           {/* Step 1 */}
-          {step===1 ? (
+          {step===1 && (
             <div className="bg-white rounded-2xl shadow p-5 grid gap-6 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="font-medium">Are YOU VAT-registered?</label>
@@ -296,7 +259,7 @@
                   <label className="flex items-center gap-2"><input type="radio" name="endUser" checked={endUser} onChange={()=>setEndUser(true)} /> Yes (they use/own the building)</label>
                   <label className="flex items-center gap-2"><input type="radio" name="endUser" checked={!endUser} onChange={()=>setEndUser(false)} /> No (contractor/another sub)</label>
                 </div>
-                <p className="text-xs text-gray-500">End Users <b>do not</b> get reverse charge; you charge VAT as normal.</p>
+                <p className="text-xs text-gray-500">End Users do not get reverse charge; you charge VAT as normal.</p>
               </div>
 
               <div className="md:col-span-2 flex justify-between">
@@ -304,10 +267,10 @@
                 <button className="px-4 py-2 rounded-lg sbx-btn" onClick={()=>setStep(2)}>Continue</button>
               </div>
             </div>
-          ) : null}
+          )}
 
           {/* Step 2 */}
-          {step===2 ? (
+          {step===2 && (
             <div className="bg-white rounded-2xl shadow p-5">
               <div className="grid gap-6 md:grid-cols-3">
                 <div className="space-y-2 md:col-span-3">
@@ -332,9 +295,9 @@
                       "Waste Removal / Skip","Other…"
                     ].map((t)=><option key={t} value={t}>{t}</option>)}
                   </select>
-                  {jobType==="Other…" ? (
+                  {jobType==="Other…" && (
                     <input className="border rounded-lg p-2 w-full mt-2" placeholder="Describe the work…" value={jobTypeOther} onChange={(e)=>setJobTypeOther(e.target.value)} />
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -373,15 +336,16 @@
                 <div className="text-xs text-gray-500">Step 2 of 3</div>
                 <div className="flex gap-2">
                   <button className="px-4 py-2 rounded-lg bg-white border border-gray-200" onClick={()=>setStep(1)}>Back</button>
-                  <button className="px-4 py-2 rounded-lg sbx-btn text-white" onClick={()=>setStep(3)} disabled={subtotal<=0}>See results</button>
+                  <button className="px-4 py-2 rounded-lg sbx-btn" onClick={()=>setStep(3)} disabled={subtotal<=0}>See results</button>
                 </div>
               </div>
             </div>
-          ) : null}
+          )}
 
-          {/* Step 3 — Results row, then Inputs + Invoice */}
-          {step===3 ? (
+          {/* Step 3 */}
+          {step===3 && (
             <div className="space-y-8">
+              {/* Results cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white rounded-2xl shadow p-5 border border-gray-100">
                   <h3 className="font-semibold mb-3">Figures</h3>
@@ -391,11 +355,11 @@
                     <div className="flex justify-between"><span>Other (ex VAT)</span><span>{currency(otherVal)}</span></div>
                     <div className="border-t my-2"></div>
                     <div className="flex justify-between font-medium"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
-                    {(youVat && !drcApplies) ? (
+                    {(youVat && !drcApplies) && (
                       <div className="flex justify-between"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>
-                    ) : null}
+                    )}
                     <div className="flex justify-between font-semibold"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
-                    {withinCIS ? (
+                    {withinCIS && (
                       <div>
                         <div className="border-t my-2"></div>
                         <div className="flex justify-between text-red-600">
@@ -406,7 +370,7 @@
                           <span>You’ll receive</span><span>{currency(expectedTakeHome)}</span>
                         </div>
                       </div>
-                    ) : null}
+                    )}
                   </div>
                 </div>
 
@@ -414,7 +378,7 @@
                   <h3 className="font-semibold mb-3">VAT / DRC</h3>
                   {!withinCIS ? (
                     <div className="rounded-xl bg-slate-50 border p-3 text-sm">
-                      <p><span className="font-semibold">Work outside CIS.</span> Reverse charge <b>never</b> applies.</p>
+                      <p><span className="font-semibold">Work outside CIS.</span> Reverse charge never applies.</p>
                       <p className="mt-1">{youVat ? "Charge VAT as normal." : "Supplier not VAT-registered — no VAT charged."}</p>
                     </div>
                   ) : (!youVat ? (
@@ -423,7 +387,7 @@
                     </div>
                   ) : (drcApplies ? (
                     <div className="rounded-xl bg-amber-50 border p-3 text-sm">
-                      <p><span className="font-semibold">Reverse Charge applies.</span> Do <b>not</b> charge VAT.</p>
+                      <p><span className="font-semibold">Reverse Charge applies.</span> Do not charge VAT.</p>
                       <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
                       <p className="text-xs text-gray-500 mt-2">Customer’s VAT to account: {currency(drcCustomerVatInfo)}.</p>
                     </div>
@@ -434,7 +398,7 @@
                   )))}
                   <ul className="text-xs text-gray-600 mt-3 list-disc pl-5 space-y-1">
                     <li>Keep labour and materials separate.</li>
-                    {withinCIS ? <li>Include CIS deduction line.</li> : null}
+                    {withinCIS && <li>Include CIS deduction line.</li>}
                     <li>Show total {withinCIS ? "and expected take-home " : ""}clearly.</li>
                   </ul>
                 </div>
@@ -446,9 +410,7 @@
                     <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={reset}>Start over</button>
                     <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={copyLines}>Copy invoice lines</button>
                   </div>
-                  <div className="text-xs text-gray-500 mt-3">
-                    Download the PDF below, then attach it to your email.
-                  </div>
+                  <div className="text-xs text-gray-500 mt-3">Download the PDF below, then attach it to your email.</div>
                 </div>
               </div>
 
@@ -499,128 +461,114 @@
                   </div>
                 </div>
 
-                {/* Invoice (printable) */}
-                <div>
-                  <div className="bg-white rounded-2xl shadow p-6 border border-gray-100" id="printable">
-                    <h2 className="text-lg font-semibold mb-3">Invoice</h2>
+                {/* Invoice (printable target) */}
+                <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
+                  <h2 className="text-lg font-semibold mb-3">Invoice</h2>
 
-                    <!-- The fixed-width A4 sheet used for print/PDF -->
-                    <div id="invoice-sheet" className="a4-sheet">
-                      <div className="p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <div>
-                            <h3 className="text-lg font-semibold">INVOICE</h3>
-                            {showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType) ? (
-                              <p className="text-xs text-gray-500">{(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works</p>
-                            ) : null}
-                          </div>
-                          <div className="text-right text-xs text-gray-500">
-                            <p>Date: {today && (document.getElementById ? '' : '')}{/* keep react happy */}{/* value below */}{/*  */}{/*  */}{/*  */}</p>
-                            <p>Date: {/**/}{/* replaced next line actually */}</p>
-                            <div className="text-right text-xs text-gray-500">
-                              <p>Date: {/**/}{/* real value below */}{/*  */}</p>
-                            </div>
-                          </div>
+                  <div id="invoice-sheet">
+                    <div className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold">INVOICE</h3>
+                          {showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType) && (
+                            <p className="text-xs text-gray-500">{(jobType==="Other…" ? jobTypeOther.trim() : jobType)} works</p>
+                          )}
                         </div>
-
-                        {/* Header info (clean version without duplications) */}
-                        <div className="mb-4 grid grid-cols-2 gap-4 text-xs">
-                          <div>
-                            <p className="font-semibold">Billed to</p>
-                            <p>{billTo}</p>
-                            <p>{siteAddr1}</p>
-                            <p>{siteAddr2}</p>
-                            <p>{siteCity} {sitePost}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold">From</p>
-                            <p>{fromName}</p>
-                            <p>{fromAddr1}</p>
-                            <p>{fromAddr2}</p>
-                            <p>{fromCity} {fromPost}</p>
-                            {youVat ? <p>VAT Reg: {fromVat || "GB…"}</p> : null}
-                            {withinCIS ? (
-                              <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        {/* Meta row (date + invoice #) */}
-                        <div className="text-xs text-gray-500 mb-2 flex justify-between">
-                          <span>Date: {invDate || "__________"}</span>
-                          <span>Invoice #: {invNo || "__________"}</span>
-                        </div>
-
-                        <table className="w-full text-sm no-break">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left py-2">Description</th>
-                              <th className="text-right py-2">Amount (ex VAT)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {labourVal>0 ? (
-                              <tr className="border-b">
-                                <td className="py-2">Labour</td>
-                                <td className="text-right py-2">{currency(labourVal)}</td>
-                              </tr>
-                            ) : null}
-                            {materialsVal>0 ? (
-                              <tr className="border-b">
-                                <td className="py-2">Materials & consumables</td>
-                                <td className="text-right py-2">{currency(materialsVal)}</td>
-                              </tr>
-                            ) : null}
-                            {otherVal>0 ? (
-                              <tr className="border-b">
-                                <td className="py-2">Other charges</td>
-                                <td className="text-right py-2">{currency(otherVal)}</td>
-                              </tr>
-                            ) : null}
-                            <tr className="border-b">
-                              <td className="py-2 font-medium">Subtotal</td>
-                              <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
-                            </tr>
-                            {(youVat && !drcApplies) ? (
-                              <tr className="border-b">
-                                <td className="py-2">VAT @ 20%</td>
-                                <td className="text-right py-2">{currency(vatAmount)}</td>
-                              </tr>
-                            ) : null}
-                            <tr>
-                              <td className="py-2 font-semibold">Total to invoice</td>
-                              <td className="text-right py-2 font-semibold">{currency(totalToInvoice)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-
-                        <div className="mt-4 text-xs">
-                          {!withinCIS
-                            ? <p className="italic">Work outside CIS. Reverse charge never applies. VAT depends only on supplier’s VAT status.</p>
-                            : (!youVat
-                                ? <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
-                                : (drcApplies
-                                    ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
-                                    : <p className="italic">VAT charged at the prevailing rate.</p>
-                                  )
-                              )
-                          }
-                        </div>
-
-                        {withinCIS ? (
-                          <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs no-break">
-                            <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
-                            <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
-                          </div>
-                        ) : null}
-
-                        <div className="mt-4 text-xs text-gray-600">
-                          <p>Bank: {bankName || "__________"}</p>
-                          <p>Account: {bankAcc || "__________"} &nbsp; Sort Code: {bankSort || "______"} &nbsp; Ref: {payRef || "Invoice #"}</p>
+                        <div className="text-right text-xs text-gray-500">
+                          <p>Date: {invDate || "__________"}</p>
+                          <p>Invoice #: {invNo || "__________"}</p>
                         </div>
                       </div>
+
+                      <div className="mb-4 grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <p className="font-semibold">Billed to</p>
+                          <p>{billTo}</p>
+                          <p>{siteAddr1}</p>
+                          <p>{siteAddr2}</p>
+                          <p>{siteCity} {sitePost}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">From</p>
+                          <p>{fromName}</p>
+                          <p>{fromAddr1}</p>
+                          <p>{fromAddr2}</p>
+                          <p>{fromCity} {fromPost}</p>
+                          {youVat && <p>VAT Reg: {fromVat || "GB…"}</p>}
+                          {withinCIS && (
+                            <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2">Description</th>
+                            <th className="text-right py-2">Amount (ex VAT)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {labourVal>0 && (
+                            <tr className="border-b">
+                              <td className="py-2">Labour</td>
+                              <td className="text-right py-2">{currency(labourVal)}</td>
+                            </tr>
+                          )}
+                          {materialsVal>0 && (
+                            <tr className="border-b">
+                              <td className="py-2">Materials & consumables</td>
+                              <td className="text-right py-2">{currency(materialsVal)}</td>
+                            </tr>
+                          )}
+                          {otherVal>0 && (
+                            <tr className="border-b">
+                              <td className="py-2">Other charges</td>
+                              <td className="text-right py-2">{currency(otherVal)}</td>
+                            </tr>
+                          )}
+                          <tr className="border-b">
+                            <td className="py-2 font-medium">Subtotal</td>
+                            <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
+                          </tr>
+                          {(youVat && !drcApplies) && (
+                            <tr className="border-b">
+                              <td className="py-2">VAT @ 20%</td>
+                              <td className="text-right py-2">{currency(vatAmount)}</td>
+                            </tr>
+                          )}
+                          <tr>
+                            <td className="py-2 font-semibold">Total to invoice</td>
+                            <td className="text-right py-2 font-semibold">{currency(totalToInvoice)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+
+                      <div className="mt-4 text-xs">
+                        {!withinCIS
+                          ? <p className="italic">Work outside CIS. Reverse charge never applies. VAT depends only on supplier’s VAT status.</p>
+                          : (!youVat
+                              ? <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
+                              : (drcApplies
+                                  ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
+                                  : <p className="italic">VAT charged at the prevailing rate.</p>
+                                )
+                            )
+                        }
+                      </div>
+
+                      {withinCIS && (
+                        <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
+                          <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
+                          <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                        </div>
+                      )}
+
+                      <div className="mt-4 text-xs text-gray-600">
+                        <p>Bank: {bankName || "__________"}</p>
+                        <p>Account: {bankAcc || "__________"} &nbsp; Sort Code: {bankSort || "______"} &nbsp; Ref: {payRef || "Invoice #"}</p>
+                      </div>
                     </div>
-                    <!-- /#invoice-sheet -->
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-3">
@@ -632,10 +580,20 @@
                 </div>
               </div>
             </div>
-          ) : null}
+          )}
         </div>
       );
     }
+
+    // Fail-safe: show runtime errors visibly (helps avoid the “blank grey screen” mystery)
+    window.addEventListener('error', (e)=>{
+      const msg = (e && e.message) ? e.message : 'Unknown error';
+      const div = document.createElement('div');
+      div.style.cssText='position:fixed;left:12px;bottom:12px;right:12px;background:#fee2e2;color:#991b1b;padding:10px 12px;border:1px solid #fecaca;border-radius:10px;font:500 12px/1.4 Montserrat,Arial,sans-serif;z-index:99999';
+      div.textContent='Script error: '+msg;
+      document.body.appendChild(div);
+      setTimeout(()=>div.remove(), 8000);
+    });
 
     ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
   </script>
