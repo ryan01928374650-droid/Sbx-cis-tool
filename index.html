@@ -16,17 +16,12 @@
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- html2pdf for client-side PDF -->
-  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-
   <style>
     :root{
       --sbx-blue:#2563eb;
       --sbx-blue-hover:#1d4ed8;
       --sbx-ink:#111827;
       --sbx-bg:#f9fafb;
-      --sbx-card:#ffffff;
-      --sbx-border:#e5e7eb;
     }
     body {
       font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -39,11 +34,12 @@
     .sbx-btn-dark { background-color: var(--sbx-ink); color:#fff; transition: background-color .2s ease; }
     .sbx-btn-dark:hover { background-color:#000; }
 
-    /* Print: only invoice preview prints if user uses window.print */
+    /* Print only the invoice area */
     @media print {
       body * { visibility: hidden !important; }
       #printable, #printable * { visibility: visible !important; }
       #printable { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; box-shadow: none !important; }
+      table, tr, td, th { page-break-inside: avoid !important; }
     }
   </style>
 </head>
@@ -59,8 +55,6 @@
       const n = parseFloat(String(v || "").replace(/,/g, ""));
       return isFinite(n) ? Math.max(0, n) : 0;
     };
-
-    const VAT_RATE = 0.2;
 
     const Badge = ({children}) => (
       <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
@@ -123,9 +117,9 @@
       const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
       const otherVal = React.useMemo(()=>clampMoney(other), [other]);
 
-      // Rules
-      const drcApplies = withinCIS && youVat && customerVat && !endUser;   // DRC only possible within CIS
-      const chargeVat = youVat && !drcApplies;                              // Only charge VAT if you’re VAT-registered and DRC doesn’t apply
+      // VAT / DRC rules
+      const drcApplies = withinCIS && youVat && customerVat && !endUser;
+      const chargeVat  = youVat && !drcApplies;
 
       const subtotal = labourVal + materialsVal + otherVal;
       const vatAmount = chargeVat ? subtotal * 0.2 : 0;
@@ -135,6 +129,22 @@
       const cisDeduction = withinCIS ? (labourVal * cisRate) : 0;
       const expectedTakeHome = totalToInvoice - cisDeduction;
       const drcCustomerVatInfo = drcApplies ? subtotal * 0.2 : 0;
+
+      // Iframe auto-resize for Duda: send height on load/changes/step
+      const sendHeight = React.useCallback(() => {
+        const h = document.documentElement.scrollHeight || document.body.scrollHeight;
+        window.parent?.postMessage({ type: 'SBX_IFRAME_HEIGHT', height: h }, '*');
+      }, []);
+      React.useEffect(() => {
+        const ro = new ResizeObserver(sendHeight);
+        ro.observe(document.body);
+        window.addEventListener('load', sendHeight);
+        const t = setInterval(sendHeight, 1000);
+        const onMsg = (e)=>{ if(e.data && e.data.type==='SBX_REQUEST_HEIGHT') sendHeight(); };
+        window.addEventListener('message', onMsg);
+        return () => { ro.disconnect(); clearInterval(t); window.removeEventListener('load', sendHeight); window.removeEventListener('message', onMsg); };
+      }, [sendHeight]);
+      React.useEffect(() => { sendHeight(); }, [step, sendHeight]);
 
       const reset = () => {
         setStep(1);
@@ -172,21 +182,7 @@
         "Waste Removal / Skip","Other…"
       ];
 
-      // Generate PDF of the invoice preview
-      const downloadPDF = async () => {
-        const el = document.getElementById('printable');
-        const fileName = `Invoice-${(invNo || '').replace(/[^A-Za-z0-9-_]/g,'') || 'SBX'}.pdf`;
-        const opt = {
-          margin:       [10,10,10,10],  // mm
-          filename:     fileName,
-          image:        { type: 'jpeg', quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
-          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-        await html2pdf().set(opt).from(el).save();
-      };
-
-      // Open a short email draft (user attaches PDF they just downloaded)
+      // Email draft (manual attach)
       const openEmailDraft = () => {
         const subject = `Invoice ${invNo || ""} from ${fromName || "Subcontractor"}`.trim();
         const body = `Hi,\n\nPlease find attached invoice ${invNo || ""} dated ${invDate || ""}.\n\nRegards,\n${fromName || ""}`;
@@ -250,7 +246,7 @@
                   <label className="flex items-center gap-2"><input type="radio" name="endUser" checked={endUser} onChange={()=>setEndUser(true)} /> Yes (they use/own the building)</label>
                   <label className="flex items-center gap-2"><input type="radio" name="endUser" checked={!endUser} onChange={()=>setEndUser(false)} /> No (contractor/another sub)</label>
                 </div>
-                <p className="text-xs text-gray-500">End Users <b>do not</b> get reverse charge; you charge VAT as normal.</p>
+                <p className="text-xs text-gray-500">End Users do not get reverse charge; you charge VAT as normal.</p>
               </div>
 
               <div className="md:col-span-2 flex justify-between">
@@ -401,7 +397,7 @@
                     <button className="px-3 py-2 rounded-lg bg-white border border-gray-200" onClick={copyLines}>Copy invoice lines</button>
                   </div>
                   <div className="text-xs text-gray-500 mt-3">
-                    Download the PDF below, then attach it to your email.
+                    Print or email from the invoice panel.
                   </div>
                 </div>
               </div>
@@ -564,11 +560,9 @@
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-3">
-                    <button className="px-4 py-2 rounded-lg sbx-btn" onClick={downloadPDF}>Download PDF</button>
                     <button className="px-4 py-2 rounded-lg bg-white border border-gray-200" onClick={()=>window.print()}>Print</button>
                     <button className="px-4 py-2 rounded-lg sbx-btn-dark" onClick={openEmailDraft}>Open email draft</button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">Attach the downloaded PDF to your email.</p>
                 </div>
               </div>
             </div>
