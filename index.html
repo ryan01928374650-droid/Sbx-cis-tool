@@ -100,14 +100,17 @@
       const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
       const otherVal = React.useMemo(()=>clampMoney(other), [other]);
 
-      const cisRate = React.useMemo(()=> cisStatus==="gross" ? 0 : (cisStatus==="net30" ? 0.30 : 0.20), [cisStatus]);
-      const cisDeduction = labourVal * cisRate;
-
+      // DRC eligibility requires VAT registration for both + not end user + within CIS
       const drcApplies = withinCIS && youVat && customerVat && !endUser;
+      // Charge VAT only if YOU are VAT-registered and DRC does NOT apply
+      const chargeVat = youVat && !drcApplies;
 
       const subtotal = labourVal + materialsVal + otherVal;
-      const vatAmount = drcApplies ? 0 : subtotal * VAT_RATE;
+      const vatAmount = chargeVat ? subtotal * VAT_RATE : 0;
       const totalToInvoice = subtotal + vatAmount;
+
+      const cisRate = React.useMemo(()=> cisStatus==="gross" ? 0 : (cisStatus==="net30" ? 0.30 : 0.20), [cisStatus]);
+      const cisDeduction = labourVal * cisRate;
       const expectedTakeHome = totalToInvoice - cisDeduction;
       const drcCustomerVatInfo = drcApplies ? subtotal * VAT_RATE : 0;
 
@@ -128,7 +131,7 @@
         if(materialsVal>0) rows.push(`Materials & consumables\t${currency(materialsVal)}`);
         if(otherVal>0) rows.push(`Other charges\t${currency(otherVal)}`);
         rows.push(`Subtotal\t${currency(subtotal)}`);
-        if(!drcApplies) rows.push(`VAT @ 20%\t${currency(vatAmount)}`);
+        if(chargeVat) rows.push(`VAT @ 20%\t${currency(vatAmount)}`);
         rows.push(`Total to invoice\t${currency(totalToInvoice)}`);
         rows.push(`CIS deduction (${cisRate>0?Math.round(cisRate*100):0}%)\t- ${currency(cisDeduction)}`);
         rows.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
@@ -154,6 +157,7 @@
         "Waste Removal / Skip","Other…"
       ];
 
+      /* Email invoice helper (uses chargeVat) */
       const emailInvoice = () => {
         const lines = [];
         const job = (showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType))
@@ -183,15 +187,18 @@
         if (materialsVal>0) lines.push(`Materials & consumables (ex VAT)\t${currency(materialsVal)}`);
         if (otherVal>0) lines.push(`Other (ex VAT)\t${currency(otherVal)}`);
         lines.push(`Subtotal\t${currency(subtotal)}`);
-        if (!drcApplies) lines.push(`VAT @ 20%\t${currency(vatAmount)}`);
+        if (chargeVat) lines.push(`VAT @ 20%\t${currency(vatAmount)}`);
         lines.push(`Total to invoice\t${currency(totalToInvoice)}`);
         if (cisRate>0) lines.push(`CIS deduction (${Math.round(cisRate*100)}%)\t- ${currency(cisDeduction)}`);
         lines.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
 
         lines.push("");
-        lines.push(drcApplies
-          ? "Note: Domestic Reverse Charge applies. Customer to account for VAT to HMRC."
-          : "Note: VAT charged at the prevailing rate."
+        lines.push(
+          !youVat
+            ? "Note: Supplier not VAT-registered — no VAT charged."
+            : (drcApplies
+                ? "Note: Domestic Reverse Charge applies. Customer to account for VAT to HMRC."
+                : "Note: VAT charged at the prevailing rate.")
         );
 
         lines.push("");
@@ -360,7 +367,7 @@
                     <div className="flex justify-between"><span>Other (ex VAT)</span><span>{currency(otherVal)}</span></div>
                     <div className="border-t my-2"></div>
                     <div className="flex justify-between font-medium"><span>Subtotal</span><span>{currency(subtotal)}</span></div>
-                    {!drcApplies && (
+                    {chargeVat && (
                       <div className="flex justify-between"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>
                     )}
                     <div className="flex justify-between font-semibold"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
@@ -370,10 +377,14 @@
                   </div>
                 </div>
 
-                {/* Card 2: DRC / VAT note */}
+                {/* Card 2: VAT / DRC note */}
                 <div className="bg-white rounded-2xl shadow p-5">
                   <h3 className="font-semibold mb-3">VAT / DRC</h3>
-                  {drcApplies ? (
+                  {!youVat ? (
+                    <div className="rounded-xl bg-slate-50 border p-3 text-sm">
+                      <p><span className="font-semibold">Not VAT-registered.</span> No VAT is charged.</p>
+                    </div>
+                  ) : drcApplies ? (
                     <div className="rounded-xl bg-amber-50 border p-3 text-sm">
                       <p><span className="font-semibold">Reverse Charge applies.</span> Do <b>not</b> charge VAT.</p>
                       <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
@@ -523,7 +534,7 @@
                             <td className="py-2 font-medium">Subtotal</td>
                             <td className="text-right py-2 font-medium">{currency(subtotal)}</td>
                           </tr>
-                          {!drcApplies && (
+                          {chargeVat && (
                             <tr className="border-b">
                               <td className="py-2">VAT @ 20%</td>
                               <td className="text-right py-2">{currency(vatAmount)}</td>
@@ -537,10 +548,12 @@
                       </table>
 
                       <div className="mt-4 text-xs">
-                        {drcApplies ? (
-                          <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
+                        {!youVat ? (
+                          <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
                         ) : (
-                          <p className="italic">VAT charged at the prevailing rate.</p>
+                          drcApplies
+                            ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
+                            : <p className="italic">VAT charged at the prevailing rate.</p>
                         )}
                       </div>
 
