@@ -15,7 +15,6 @@
 
   <style>
     .step-dot { height:8px; width:8px; border-radius:9999px; }
-
     /* PRINT: Only the invoice preview (#printable) is printed */
     @media print {
       body * { visibility: hidden !important; }
@@ -100,7 +99,7 @@
       const materialsVal = React.useMemo(()=>clampMoney(materials), [materials]);
       const otherVal = React.useMemo(()=>clampMoney(other), [other]);
 
-      // DRC eligibility requires VAT registration for both + not end user + within CIS
+      // DRC eligibility requires: within CIS + both VAT-registered + not end user
       const drcApplies = withinCIS && youVat && customerVat && !endUser;
       // Charge VAT only if YOU are VAT-registered and DRC does NOT apply
       const chargeVat = youVat && !drcApplies;
@@ -110,7 +109,7 @@
       const totalToInvoice = subtotal + vatAmount;
 
       const cisRate = React.useMemo(()=> cisStatus==="gross" ? 0 : (cisStatus==="net30" ? 0.30 : 0.20), [cisStatus]);
-      const cisDeduction = labourVal * cisRate;
+      const cisDeduction = withinCIS ? (labourVal * cisRate) : 0;
       const expectedTakeHome = totalToInvoice - cisDeduction;
       const drcCustomerVatInfo = drcApplies ? subtotal * VAT_RATE : 0;
 
@@ -133,17 +132,10 @@
         rows.push(`Subtotal\t${currency(subtotal)}`);
         if(chargeVat) rows.push(`VAT @ 20%\t${currency(vatAmount)}`);
         rows.push(`Total to invoice\t${currency(totalToInvoice)}`);
-        rows.push(`CIS deduction (${cisRate>0?Math.round(cisRate*100):0}%)\t- ${currency(cisDeduction)}`);
-        rows.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
+        if(withinCIS && cisRate>0) rows.push(`CIS deduction (${Math.round(cisRate*100)}%)\t- ${currency(cisDeduction)}`);
+        if(withinCIS) rows.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
         navigator.clipboard.writeText(rows.join("\n")).then(()=>alert("Invoice lines copied to clipboard."));
       };
-
-      const jobLabel = () => {
-        if(!showJobOnInvoice) return "";
-        if(jobType === "Other…") return jobTypeOther.trim();
-        return jobType;
-      };
-      const jobLabelDisplay = jobLabel();
 
       const JOB_TYPES = [
         "General building","Carpentry / Joinery","Plastering / Rendering","Painting & Decorating",
@@ -157,7 +149,7 @@
         "Waste Removal / Skip","Other…"
       ];
 
-      /* Email invoice helper (uses chargeVat) */
+      /* Email invoice helper (respects CIS + VAT logic) */
       const emailInvoice = () => {
         const lines = [];
         const job = (showJobOnInvoice && (jobType==="Other…" ? jobTypeOther.trim() : jobType))
@@ -180,7 +172,7 @@
         if (fromAddr2) lines.push(fromAddr2);
         if (fromCity || fromPost) lines.push(`${fromCity} ${fromPost}`.trim());
         if (youVat && (fromVat || "GB…")) lines.push(`VAT Reg: ${fromVat || "GB…"}`);
-        lines.push(`CIS Status: ${cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}`);
+        if (withinCIS) lines.push(`CIS Status: ${cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}`);
         lines.push("");
 
         if (labourVal>0) lines.push(`Labour (ex VAT)\t${currency(labourVal)}`);
@@ -189,16 +181,18 @@
         lines.push(`Subtotal\t${currency(subtotal)}`);
         if (chargeVat) lines.push(`VAT @ 20%\t${currency(vatAmount)}`);
         lines.push(`Total to invoice\t${currency(totalToInvoice)}`);
-        if (cisRate>0) lines.push(`CIS deduction (${Math.round(cisRate*100)}%)\t- ${currency(cisDeduction)}`);
-        lines.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
+        if (withinCIS && cisRate>0) lines.push(`CIS deduction (${Math.round(cisRate*100)}%)\t- ${currency(cisDeduction)}`);
+        if (withinCIS) lines.push(`Expected amount you’ll receive\t${currency(expectedTakeHome)}`);
 
         lines.push("");
         lines.push(
-          !youVat
-            ? "Note: Supplier not VAT-registered — no VAT charged."
-            : (drcApplies
-                ? "Note: Domestic Reverse Charge applies. Customer to account for VAT to HMRC."
-                : "Note: VAT charged at the prevailing rate.")
+          !withinCIS
+            ? "Note: Work outside CIS. Reverse charge never applies. VAT is charged only if the supplier is VAT-registered."
+            : (!youVat
+                ? "Note: Supplier not VAT-registered — no VAT charged."
+                : (drcApplies
+                    ? "Note: Domestic Reverse Charge applies. Customer to account for VAT to HMRC."
+                    : "Note: VAT charged at the prevailing rate."))
         );
 
         lines.push("");
@@ -329,12 +323,12 @@
 
                 <div className="space-y-2">
                   <label className="font-medium">Your CIS status</label>
-                  <select value={cisStatus} onChange={(e)=>setCisStatus(e.target.value)} className="border rounded-lg p-2 w-full">
+                  <select value={cisStatus} onChange={(e)=>setCisStatus(e.target.value)} className="border rounded-lg p-2 w-full" disabled={!withinCIS}>
                     <option value="gross">Gross (0% deduction)</option>
                     <option value="net20">Registered (20% deduction)</option>
                     <option value="net30">Unverified (30% deduction)</option>
                   </select>
-                  <p className="text-xs text-gray-500">Ask the contractor to verify you if unsure.</p>
+                  <p className="text-xs text-gray-500">{withinCIS ? "Ask the contractor to verify you if unsure." : "CIS does not apply to this job."}</p>
                 </div>
 
                 <div className="rounded-xl bg-gray-100 p-4 text-sm md:col-span-3">
@@ -371,34 +365,50 @@
                       <div className="flex justify-between"><span>VAT @ 20%</span><span>{currency(vatAmount)}</span></div>
                     )}
                     <div className="flex justify-between font-semibold"><span>Total to invoice</span><span>{currency(totalToInvoice)}</span></div>
-                    <div className="border-t my-2"></div>
-                    <div className="flex justify-between text-red-600"><span>CIS on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
-                    <div className="flex justify-between font-semibold"><span>You’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                    {withinCIS && (
+                      <>
+                        <div className="border-t my-2"></div>
+                        <div className="flex justify-between text-red-600">
+                          <span>CIS on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:"(none)"}</span>
+                          <span>- {currency(cisDeduction)}</span>
+                        </div>
+                        <div className="flex justify-between font-semibold">
+                          <span>You’ll receive</span><span>{currency(expectedTakeHome)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 {/* Card 2: VAT / DRC note */}
                 <div className="bg-white rounded-2xl shadow p-5">
                   <h3 className="font-semibold mb-3">VAT / DRC</h3>
-                  {!youVat ? (
+                  {!withinCIS ? (
                     <div className="rounded-xl bg-slate-50 border p-3 text-sm">
-                      <p><span className="font-semibold">Not VAT-registered.</span> No VAT is charged.</p>
-                    </div>
-                  ) : drcApplies ? (
-                    <div className="rounded-xl bg-amber-50 border p-3 text-sm">
-                      <p><span className="font-semibold">Reverse Charge applies.</span> Do <b>not</b> charge VAT.</p>
-                      <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
-                      <p className="text-xs text-gray-500 mt-2">Customer’s VAT to account: {currency(drcCustomerVatInfo)}.</p>
+                      <p><span className="font-semibold">Work outside CIS.</span> Reverse charge <b>never</b> applies.</p>
+                      <p className="mt-1">{youVat ? "Charge VAT as normal." : "Supplier not VAT-registered — no VAT charged."}</p>
                     </div>
                   ) : (
-                    <div className="rounded-xl bg-emerald-50 border p-3 text-sm">
-                      <p><span className="font-semibold">Charge VAT as normal.</span> Reverse charge does not apply.</p>
-                    </div>
+                    !youVat ? (
+                      <div className="rounded-xl bg-slate-50 border p-3 text-sm">
+                        <p><span className="font-semibold">Not VAT-registered.</span> No VAT is charged.</p>
+                      </div>
+                    ) : drcApplies ? (
+                      <div className="rounded-xl bg-amber-50 border p-3 text-sm">
+                        <p><span className="font-semibold">Reverse Charge applies.</span> Do <b>not</b> charge VAT.</p>
+                        <p className="italic mt-1">“Domestic Reverse Charge applies. Customer to account for VAT to HMRC.”</p>
+                        <p className="text-xs text-gray-500 mt-2">Customer’s VAT to account: {currency(drcCustomerVatInfo)}.</p>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl bg-emerald-50 border p-3 text-sm">
+                        <p><span className="font-semibold">Charge VAT as normal.</span> Reverse charge does not apply.</p>
+                      </div>
+                    )
                   )}
                   <ul className="text-xs text-gray-600 mt-3 list-disc pl-5 space-y-1">
                     <li>Keep labour and materials separate.</li>
-                    <li>Include CIS deduction line.</li>
-                    <li>Show total and expected take-home clearly.</li>
+                    {withinCIS && <li>Include CIS deduction line.</li>}
+                    <li>Show total {withinCIS && "and expected take-home "}clearly.</li>
                   </ul>
                 </div>
 
@@ -500,7 +510,10 @@
                           {youVat && (
                             <p>VAT Reg: {fromVat || "GB…"}</p>
                           )}
-                          <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
+                          {/* Show CIS Status ONLY if within CIS */}
+                          {withinCIS && (
+                            <p>CIS Status: {cisStatus === "gross" ? "Gross (0%)" : cisStatus === "net30" ? "Unverified (30%)" : "Registered (20%)"}</p>
+                          )}
                         </div>
                       </div>
 
@@ -548,19 +561,25 @@
                       </table>
 
                       <div className="mt-4 text-xs">
-                        {!youVat ? (
-                          <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
-                        ) : (
-                          drcApplies
-                            ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
-                            : <p className="italic">VAT charged at the prevailing rate.</p>
-                        )}
+                        {!withinCIS
+                          ? <p className="italic">Work outside CIS. Reverse charge never applies. VAT depends only on supplier’s VAT status.</p>
+                          : (!youVat
+                              ? <p className="italic">Supplier not VAT-registered — no VAT charged.</p>
+                              : (drcApplies
+                                  ? <p className="italic">Domestic Reverse Charge applies. Customer to account for VAT to HMRC.</p>
+                                  : <p className="italic">VAT charged at the prevailing rate.</p>
+                                )
+                            )
+                        }
                       </div>
 
-                      <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
-                        <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
-                        <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
-                      </div>
+                      {/* CIS summary only if within CIS */}
+                      {withinCIS && (
+                        <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs">
+                          <div className="flex justify-between"><span>CIS deduction on labour {cisRate>0?`(${Math.round(cisRate*100)}%)`:""}</span><span>- {currency(cisDeduction)}</span></div>
+                          <div className="flex justify-between font-semibold"><span>Expected amount you’ll receive</span><span>{currency(expectedTakeHome)}</span></div>
+                        </div>
+                      )}
 
                       <div className="mt-4 text-xs text-gray-600">
                         <p>Bank: {bankName || "__________"}</p>
